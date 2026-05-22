@@ -679,7 +679,22 @@ def api_start():
     user_state = get_user_state(email)
     active_threads = [t for t in user_state.get("threads", []) if t.is_alive()]
     if active_threads:
-        return jsonify({"error": "Seu bot ja esta rodando! Clique PARAR primeiro."}), 400
+        # Se ja tem threads ativas, parar as antigas antes de iniciar novas
+        add_log(email, f"Parando {len(active_threads)} sessoes antigas antes de reiniciar...", "warning")
+        with user_state["lock"]:
+            user_state["stop_requested"] = True
+        # Aguardar ate 10s para as threads pararem
+        timeout_stop = time.time() + 10
+        while time.time() < timeout_stop:
+            still_alive = [t for t in user_state.get("threads", []) if t.is_alive()]
+            if not still_alive:
+                break
+            time.sleep(0.5)
+        # Resetar estado
+        with user_state["lock"]:
+            user_state["stop_requested"] = False
+            user_state["threads"] = []
+            user_state["sessions"] = []
     with online_users_lock:
         online_users[email] = {"started_at": datetime.now().strftime("%H:%M:%S"), "sessions": num_sessions, "last_seen": time.time()}
     threading.Thread(target=start_bot, args=(email, password, num_sessions, proxy_config), daemon=True).start()
