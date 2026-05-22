@@ -446,8 +446,15 @@ class SeoFastSession:
         self.rotation_count += 1
         self.proxy_url = build_proxy_url(self.proxy_config, self.session_id, rotation_id=int(time.time()) % 100000 + self.rotation_count)
         self.last_rotation_time = time.time()
-        add_log(self.owner_email, f"[S{self.session_id}] Rotacao #{self.rotation_count}: novo IP (BR)", "info")
-        return self.login()
+        # Apenas reconectar com novo proxy, mantendo PHPSESSID e hash_ajax
+        try:
+            self._create_client()
+            self.detect_ip()
+            add_log(self.owner_email, f"[S{self.session_id}] Rotacao #{self.rotation_count}: IP {self.current_ip} (BR)", "info")
+            return True
+        except Exception as e:
+            add_log(self.owner_email, f"[S{self.session_id}] Erro na rotacao: {str(e)[:50]}", "error")
+            return False
 
     def should_rotate(self):
         return (time.time() - self.last_rotation_time) >= IP_ROTATION_INTERVAL
