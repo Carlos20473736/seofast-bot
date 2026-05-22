@@ -81,7 +81,9 @@ TIMER_MULTIPLIER = 0.60
 MAX_TIMER_SECONDS = 60
 PROXY_PORT = 824
 PROXY_COUNTRY = "br"
-IP_ROTATION_INTERVAL = 300  # 5 minutos - rotacao mais frequente = mais videos disponiveis
+# Rotacao de IP: APENAS quando IP esgotado (sem videos disponiveis)
+# Nao rotaciona por tempo - maximiza videos assistidos por IP
+IP_EXHAUSTED_THRESHOLD = 5  # tentativas vazias consecutivas para considerar IP esgotado
 
 # ===== DISPOSITIVOS ANDROID =====
 ANDROID_DEVICES = [
@@ -457,7 +459,9 @@ class SeoFastSession:
             return False
 
     def should_rotate(self):
-        return (time.time() - self.last_rotation_time) >= IP_ROTATION_INTERVAL
+        # Rotaciona APENAS quando IP esgotado (muitas tentativas sem video)
+        # Nao rotaciona por tempo - cada IP assiste TODOS os videos disponiveis
+        return False  # rotacao forcada pelo threshold de consecutive_empty
 
     def run_cycle(self):
         user_state = get_user_state(self.owner_email)
@@ -583,8 +587,10 @@ def session_worker(session_obj):
     # Loop principal
     while not user_state["stop_requested"]:
         try:
-            # Rotacao de IP
-            if session_obj.should_rotate():
+            # Rotacao de IP: APENAS quando IP esgotado (sem videos)
+            # Cada IP assiste TODOS os videos disponiveis antes de trocar
+            if session_obj.consecutive_empty >= IP_EXHAUSTED_THRESHOLD:
+                add_log(session_obj.owner_email, f"[S{session_obj.session_id}] IP esgotado ({session_obj.consecutive_empty}x sem video), rotacionando...", "warning")
                 session_obj.status = "rotating"
                 if not session_obj.rotate_ip():
                     time.sleep(10)
@@ -592,12 +598,7 @@ def session_worker(session_obj):
                         time.sleep(30)
                         continue
                 session_obj.consecutive_empty = 0
-
-            # Forcar rotacao se muitas tentativas vazias
-            if session_obj.consecutive_empty >= 10:
-                add_log(session_obj.owner_email, f"[S{session_obj.session_id}] {session_obj.consecutive_empty}x sem tarefa, forcando rotacao...", "warning")
-                session_obj.last_rotation_time = 0
-                session_obj.consecutive_empty = 0
+                add_log(session_obj.owner_email, f"[S{session_obj.session_id}] Novo IP: {session_obj.current_ip} - pool de videos renovado!", "success")
                 continue
 
             # Executar ciclo
