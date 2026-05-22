@@ -358,7 +358,7 @@ class SeoFastSession:
         self.current_video = None
         self.current_ip = None
         self.http = None  # httpx.Client
-        self._use_http2 = True  # Tenta HTTP/2 primeiro, muda para False se falhar
+        self._use_http2 = False  # HTTP/1.1 como padrao (mais estavel com SOCKS5)
         # === ESTATISTICAS ===
         self.total_attempts = 0
         self.tasks_found = 0
@@ -1168,27 +1168,42 @@ def api_status():
 
 @app.route("/api/online")
 def api_online():
-    """Retorna lista de usuarios online."""
+    """Retorna lista de usuarios online (baseado em sessoes ativas, nao heartbeat)."""
+    users_list = []
+
     with online_users_lock:
-        actually_running = []
         for email, info in list(online_users.items()):
+            # Verificar se tem sessoes ou threads ativas
+            has_activity = False
             if email in users_state:
                 ustate = users_state[email]
                 active_threads = [t for t in ustate.get("threads", []) if t.is_alive()]
-                if not active_threads and not ustate.get("running"):
-                    del online_users[email]
-                    continue
-            actually_running.append(email)
+                sessions = ustate.get("sessions", [])
+                if active_threads or sessions or ustate.get("running"):
+                    has_activity = True
 
-        users_list = []
-        for email in actually_running:
-            info = online_users.get(email, {})
+            if not has_activity:
+                # Verificar se esta no active_bots.json (persistido)
+                try:
+                    bot_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "active_bots.json")
+                    if os.path.exists(bot_file):
+                        with open(bot_file, "r") as f:
+                            active = json.load(f)
+                        if email in active:
+                            has_activity = True
+                except Exception:
+                    pass
+
+            if not has_activity:
+                continue
+
             user_earned = 0.0
             user_views = 0
             if email in users_state:
                 ustate = users_state[email]
                 user_earned = round(ustate.get("total_earned", 0.0), 4)
                 user_views = ustate.get("total_views", 0)
+
             users_list.append({
                 "email": email,
                 "started_at": info.get("started_at", "-"),
