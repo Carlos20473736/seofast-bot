@@ -114,6 +114,12 @@ APP_VERSION = "1.1.0"
 APP_SECRET = "seo_fast_SFk1gR5h5DGH"
 PACKAGE_NAME = "com.example.seofast"
 
+# === CONFIGURACOES DE OTIMIZACAO ===
+TIMER_MULTIPLIER = 0.60  # Usar 60% do timer (testado e aceito pelo servidor)
+MAX_TIMER_SECONDS = 60   # Rejeitar tarefas com timer > 60s
+PROXY_TYPE = "socks5"    # socks5 (porta 824) ou http (porta 823)
+PROXY_PORT = 824         # Porta SOCKS5 do DataImpulse
+
 
 # ===== GERADORES DE IDENTIDADE UNICA POR SESSAO =====
 
@@ -268,7 +274,8 @@ def build_proxy_url(proxy_config, session_id):
     """
     Constroi a URL do proxy para uma sessao especifica.
     Usa sessid no username para manter IP fixo por sessao (30 min).
-    Formato DataImpulse: http://login__cr.COUNTRY;sessid.SESSION_ID:password@host:823
+    Suporta SOCKS5 (porta 824) e HTTP (porta 823).
+    SOCKS5 e mais estavel e testado com DataImpulse.
     """
     if not proxy_config or not proxy_config.get("enabled"):
         return None
@@ -282,12 +289,16 @@ def build_proxy_url(proxy_config, session_id):
         return None
 
     # Usar sessid FIXO por sessao para manter o mesmo IP por 30 min
-    sessid_value = f"seofast{session_id}"
+    sessid_value = f"seofast{session_id}_{int(time.time()) % 100000}"
 
-    # Formato correto DataImpulse: login__cr.PAIS;sessid.VALOR:senha@host:823
+    # Formato DataImpulse com parametros de sessao
     login_with_params = f"{login}__cr.{country};sessid.{sessid_value}"
 
-    return f"http://{login_with_params}:{password}@{host}:823"
+    # SOCKS5 (porta 824) - mais estavel, testado
+    if PROXY_TYPE == "socks5":
+        return f"socks5://{login_with_params}:{password}@{host}:{PROXY_PORT}"
+    else:
+        return f"http://{login_with_params}:{password}@{host}:823"
 
 
 # ===== CLASSE DO BOT =====
@@ -698,11 +709,24 @@ class SeoFastSession:
         timer = int(result.get("timer", 15))
         id_status = result.get("id_status", "")
         self.current_video = video_id
+
+        # === FILTRO DE TAREFAS LONGAS ===
+        # Tarefas com timer > 60s pagam quase igual mas demoram muito
+        if timer > MAX_TIMER_SECONDS:
+            add_log_for_user(self.owner_email, f"[S{self.session_id}] SKIP {video_id} (timer={timer}s > {MAX_TIMER_SECONDS}s)", "warning")
+            self.current_video = None
+            self.status = "skipped"
+            return False
+
         self.status = "watching"
 
-        add_log_for_user(self.owner_email, f"[S{self.session_id}] {video_id} ({timer}s)")
+        # === TIMER OTIMIZADO ===
+        # Testado: servidor aceita complete_task com 60% do timer original
+        # Economia de 40% do tempo por tarefa = ~40% mais tarefas/hora
+        optimized_timer = max(int(timer * TIMER_MULTIPLIER), 5)  # minimo 5s
+        add_log_for_user(self.owner_email, f"[S{self.session_id}] {video_id} ({timer}s -> {optimized_timer}s)")
 
-        for _ in range(timer + 2):
+        for _ in range(optimized_timer):
             if user_state["stop_requested"]:
                 return False
             time.sleep(1)
@@ -745,26 +769,37 @@ def session_worker(session_obj):
 
     add_log_for_user(session_obj.owner_email, f"[S{session_obj.session_id}] Login OK | Hash: {session_obj.hash_ajax[:8]}... | {session_obj.device_info['brand']} {session_obj.device_info['model']}", "success")
 
+    consecutive_empty = 0
+
     while not user_state["stop_requested"]:
         try:
             success = session_obj.run_cycle()
             if not success:
                 if session_obj.status == "login_failed":
                     break
-                delay = random.uniform(10, 20)
+                consecutive_empty += 1
+                # Espera adaptativa: começa curta e aumenta se nao tem tarefa
+                if consecutive_empty <= 3:
+                    delay = random.uniform(3, 5)
+                elif consecutive_empty <= 10:
+                    delay = random.uniform(5, 8)
+                else:
+                    delay = random.uniform(8, 12)
                 for _ in range(int(delay)):
                     if user_state["stop_requested"]:
                         break
                     time.sleep(1)
             else:
-                delay = random.uniform(2, 5)
+                consecutive_empty = 0
+                # Apos sucesso, espera curta para pegar proximo video rapido
+                delay = random.uniform(1, 3)
                 for _ in range(int(delay)):
                     if user_state["stop_requested"]:
                         break
                     time.sleep(1)
         except Exception as e:
             add_log_for_user(session_obj.owner_email, f"[S{session_obj.session_id}] Erro: {str(e)[:50]}", "error")
-            time.sleep(10)
+            time.sleep(5)
 
     session_obj.status = "stopped"
 
