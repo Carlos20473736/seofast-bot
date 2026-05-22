@@ -1,6 +1,6 @@
 flask==3.1.1
+gunicorn==23.0.0
 httpx[http2]==0.28.1
 httpx-socks[asyncio]==0.10.0
 sniffio
 anyio
-gunicorn==23.0.0
