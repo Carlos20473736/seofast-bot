@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {% if allowed_domain %}<meta name="allowed-domain" content="{{ allowed_domain }}">{% endif %}
     <title>SeoFast Multi-Bot</title>
     <link rel="icon" href="/static/img/logo_chameleon.jpeg" type="image/jpeg">
     <style>
@@ -391,6 +392,118 @@
                 text-align: center;
             }
         }
+
+        /* ===== MULTI-ACCOUNT STYLES ===== */
+        .accounts-list {
+            max-height: 400px;
+            overflow-y: auto;
+            margin-bottom: 15px;
+        }
+
+        .account-item {
+            display: grid;
+            grid-template-columns: 30px 1fr 1fr 80px 40px;
+            gap: 10px;
+            align-items: center;
+            padding: 10px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            margin-bottom: 8px;
+            background: var(--bg-secondary);
+        }
+
+        @media (max-width: 768px) {
+            .account-item {
+                grid-template-columns: 1fr;
+                gap: 5px;
+            }
+            .account-item .acc-num { display: none; }
+        }
+
+        .account-item .acc-num {
+            color: var(--green-primary);
+            font-weight: bold;
+            font-size: 0.85rem;
+            text-align: center;
+        }
+
+        .account-item input {
+            padding: 8px 10px;
+            font-size: 0.8rem;
+        }
+
+        .account-item .acc-sessions {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .account-item .acc-sessions input[type="number"] {
+            width: 60px;
+            text-align: center;
+            padding: 8px 5px;
+        }
+
+        .account-item .acc-sessions span {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+        }
+
+        .btn-remove-acc {
+            background: transparent;
+            border: 1px solid var(--red);
+            color: var(--red);
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1.1rem;
+            padding: 6px 10px;
+            transition: all 0.2s;
+        }
+
+        .btn-remove-acc:hover {
+            background: rgba(255, 68, 68, 0.2);
+        }
+
+        .btn-add-acc {
+            background: transparent;
+            border: 1px dashed var(--green-primary);
+            color: var(--green-primary);
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            padding: 10px 20px;
+            transition: all 0.2s;
+            font-family: 'Courier New', monospace;
+            width: 100%;
+        }
+
+        .btn-add-acc:hover {
+            background: rgba(0, 255, 65, 0.05);
+            border-style: solid;
+        }
+
+        .btn-add-acc:disabled {
+            border-color: #333;
+            color: #666;
+            cursor: not-allowed;
+        }
+
+        .accounts-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .accounts-count {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        .accounts-count span {
+            color: var(--green-primary);
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -402,35 +515,23 @@
             <img src="/static/img/logo_anon.png" alt="Logo">
             <div>
                 <h1>SEOFAST BOT</h1>
-                <div class="subtitle">Multi-Session Automation System v1.1.0</div>
+                <div class="subtitle">Multi-Session Automation System v2.0.0</div>
             </div>
             <img src="/static/img/logo_chameleon.jpeg" alt="Logo">
         </div>
 
-        <!-- Config Card -->
+        <!-- Multi-Account Card -->
         <div class="card">
-            <div class="card-title">🔑 LOGIN SEO-FAST.BZ</div>
-            <div class="form-grid">
-                <div class="form-group">
-                    <label>Email / Login</label>
-                    <input type="text" id="login_email" placeholder="Seu email de login no seo-fast.bz">
-                </div>
-                <div class="form-group">
-                    <label>Senha</label>
-                    <input type="password" id="login_password" placeholder="Sua senha">
-                </div>
-                <div class="form-group">
-                    <label>Sessões Simultâneas</label>
-                    <div class="slider-container">
-                        <input type="range" id="num_sessions" min="1" max="100" value="50">
-                        <span class="slider-value" id="sessions_display">50</span>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>&nbsp;</label>
-                    <p class="login-note">O bot faz login automático, coleta o PHPSESSID e hash_ajax automaticamente. Basta inserir email e senha.</p>
-                </div>
+            <div class="card-title">🔑 CONTAS SEO-FAST.BZ</div>
+            <div class="accounts-header">
+                <p class="login-note">Adicione até 20 contas. Cada conta terá suas próprias sessões independentes. O bot faz login automático e coleta PHPSESSID/hash_ajax.</p>
+                <div class="accounts-count">Contas: <span id="accounts_count">1</span>/20</div>
             </div>
+            <div class="accounts-list" id="accounts_list">
+                <!-- Accounts will be rendered here by JS -->
+            </div>
+            <button class="btn-add-acc" id="btn_add_account" onclick="addAccount()">+ ADICIONAR CONTA</button>
+
             <!-- Proxy Config -->
             <div style="border-top:1px solid #1a1a2e;margin-top:15px;padding-top:15px;">
                 <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
@@ -463,8 +564,8 @@
             </div>
 
             <div class="btn-group">
-                <button class="btn btn-start" id="btn_start" onclick="startBot()">▶ INICIAR</button>
-                <button class="btn btn-stop" id="btn_stop" onclick="stopBot()" disabled>■ PARAR</button>
+                <button class="btn btn-start" id="btn_start" onclick="startBot()">▶ INICIAR TODAS</button>
+                <button class="btn btn-stop" id="btn_stop" onclick="stopBot()" disabled>■ PARAR TODAS</button>
             </div>
         </div>
 
@@ -497,6 +598,7 @@
                 <table>
                     <thead>
                         <tr>
+                            <th>Conta</th>
                             <th>#</th>
                             <th>Dispositivo</th>
                             <th>IP</th>
@@ -507,7 +609,7 @@
                         </tr>
                     </thead>
                     <tbody id="sessions_table">
-                        <tr><td colspan="7" style="text-align:center;color:#444;">Nenhuma sessão ativa</td></tr>
+                        <tr><td colspan="8" style="text-align:center;color:#444;">Nenhuma sessão ativa</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -517,7 +619,7 @@
         <div class="card">
             <div class="card-title">📋 LOGS</div>
             <div class="logs-container" id="logs_container">
-                <div class="log-entry log-info">Sistema pronto. Insira suas credenciais e clique INICIAR.</div>
+                <div class="log-entry log-info">Sistema pronto. Adicione suas contas e clique INICIAR TODAS.</div>
             </div>
         </div>
 
@@ -569,11 +671,30 @@
         if (window.top !== window.self) {
             document.body.innerHTML = '<h1 style="color:red;text-align:center;padding:50px;">ACESSO BLOQUEADO</h1>';
         }
+        // Domain protection - allows Railway, Render, localhost, and custom domains
         (function() {
             const allowedDomains = ['seofast-bot.onrender.com', 'localhost', '127.0.0.1', '0.0.0.0'];
+            const allowedSuffixes = ['.railway.app', '.onrender.com', '.up.railway.app'];
             const currentHost = window.location.hostname;
-            const isAllowed = allowedDomains.some(d => currentHost.includes(d));
-            if (!isAllowed && currentHost !== '' && !currentHost.startsWith('192.168') && !currentHost.startsWith('10.')) {
+            // Check exact match
+            let isAllowed = allowedDomains.some(d => currentHost === d || currentHost.includes(d));
+            // Check suffix match (Railway, Render, etc)
+            if (!isAllowed) {
+                isAllowed = allowedSuffixes.some(s => currentHost.endsWith(s));
+            }
+            // Allow local/private IPs
+            if (!isAllowed) {
+                isAllowed = currentHost === '' || currentHost.startsWith('192.168') || currentHost.startsWith('10.') || currentHost.startsWith('172.');
+            }
+            // Allow if served from RAILWAY_PUBLIC_DOMAIN env (injected by backend)
+            const metaDomain = document.querySelector('meta[name="allowed-domain"]');
+            if (!isAllowed && metaDomain) {
+                const extraDomain = metaDomain.getAttribute('content');
+                if (extraDomain && currentHost === extraDomain) {
+                    isAllowed = true;
+                }
+            }
+            if (!isAllowed) {
                 document.body.innerHTML = '<div style="background:#0a0a0a;color:#ff4444;min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:monospace;"><div style="text-align:center;"><h1>CLONE DETECTADO</h1><p>Acesse o original: <a href="https://seofast-bot.onrender.com" style="color:#00ff41;">seofast-bot.onrender.com</a></p></div></div>';
             }
         })();
@@ -591,40 +712,139 @@
         })();
 
         // ═══════════════════════════════════════════════════════════════
-        // BOT LOGIC
+        // MULTI-ACCOUNT MANAGEMENT
         // ═══════════════════════════════════════════════════════════════
 
-        const slider = document.getElementById('num_sessions');
-        const display = document.getElementById('sessions_display');
-        slider.addEventListener('input', () => {
-            display.textContent = slider.value;
-            localStorage.setItem('sf_sessions', slider.value);
-        });
+        const MAX_ACCOUNTS = 20;
+        let accounts = []; // Array of {email, password, sessions}
+
+        function loadAccounts() {
+            const saved = localStorage.getItem('sf_accounts');
+            if (saved) {
+                try {
+                    accounts = JSON.parse(saved);
+                } catch(e) {
+                    accounts = [];
+                }
+            }
+            // Migration: if old single-account data exists, import it
+            if (accounts.length === 0) {
+                const oldEmail = localStorage.getItem('sf_email');
+                const oldPass = localStorage.getItem('sf_password');
+                const oldSessions = localStorage.getItem('sf_sessions');
+                if (oldEmail && oldPass) {
+                    accounts.push({
+                        email: oldEmail,
+                        password: oldPass,
+                        sessions: parseInt(oldSessions) || 15
+                    });
+                }
+            }
+            if (accounts.length === 0) {
+                accounts.push({ email: '', password: '', sessions: 15 });
+            }
+            renderAccounts();
+        }
+
+        function saveAccounts() {
+            // Read current values from DOM
+            const items = document.querySelectorAll('.account-item');
+            accounts = [];
+            items.forEach((item, idx) => {
+                const email = item.querySelector('.acc-email').value.trim();
+                const password = item.querySelector('.acc-password').value.trim();
+                const sessions = parseInt(item.querySelector('.acc-sessions-input').value) || 15;
+                accounts.push({ email, password, sessions });
+            });
+            localStorage.setItem('sf_accounts', JSON.stringify(accounts));
+            // Also save proxy
+            localStorage.setItem('sf_proxy_enabled', document.getElementById('proxy_enabled').checked ? '1' : '0');
+            localStorage.setItem('sf_proxy_login', document.getElementById('proxy_login').value);
+            localStorage.setItem('sf_proxy_password', document.getElementById('proxy_password').value);
+            localStorage.setItem('sf_proxy_host', document.getElementById('proxy_host').value);
+            localStorage.setItem('sf_proxy_country', document.getElementById('proxy_country').value);
+            updateAccountsCount();
+        }
+
+        function renderAccounts() {
+            const container = document.getElementById('accounts_list');
+            container.innerHTML = '';
+            accounts.forEach((acc, idx) => {
+                const div = document.createElement('div');
+                div.className = 'account-item';
+                div.innerHTML = `
+                    <div class="acc-num">${idx + 1}</div>
+                    <input type="text" class="acc-email" value="${escapeHtml(acc.email)}" placeholder="Email / Login" oninput="saveAccounts()">
+                    <input type="password" class="acc-password" value="${escapeHtml(acc.password)}" placeholder="Senha" oninput="saveAccounts()">
+                    <div class="acc-sessions">
+                        <input type="number" class="acc-sessions-input" min="1" max="100" value="${acc.sessions}" oninput="saveAccounts()">
+                        <span>sess.</span>
+                    </div>
+                    <button class="btn-remove-acc" onclick="removeAccount(${idx})" title="Remover conta">✕</button>
+                `;
+                container.appendChild(div);
+            });
+            updateAccountsCount();
+            updateAddButton();
+        }
+
+        function addAccount() {
+            if (accounts.length >= MAX_ACCOUNTS) return;
+            accounts.push({ email: '', password: '', sessions: 15 });
+            renderAccounts();
+            saveAccounts();
+        }
+
+        function removeAccount(idx) {
+            if (accounts.length <= 1) {
+                alert('Você precisa ter pelo menos 1 conta!');
+                return;
+            }
+            accounts.splice(idx, 1);
+            renderAccounts();
+            saveAccounts();
+        }
+
+        function updateAccountsCount() {
+            document.getElementById('accounts_count').textContent = accounts.length;
+        }
+
+        function updateAddButton() {
+            const btn = document.getElementById('btn_add_account');
+            if (accounts.length >= MAX_ACCOUNTS) {
+                btn.disabled = true;
+                btn.textContent = 'LIMITE DE 20 CONTAS ATINGIDO';
+            } else {
+                btn.disabled = false;
+                btn.textContent = '+ ADICIONAR CONTA (' + accounts.length + '/' + MAX_ACCOUNTS + ')';
+            }
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str || '';
+            return div.innerHTML;
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // BOT LOGIC
+        // ═══════════════════════════════════════════════════════════════
 
         let pollInterval = null;
         let onlineInterval = null;
         let heartbeatInterval = null;
+        let activeEmails = []; // emails currently running
 
         // ═══ PROXY TOGGLE ═══
         const proxyCheckbox = document.getElementById('proxy_enabled');
         const proxyFields = document.getElementById('proxy_fields');
         proxyCheckbox.addEventListener('change', () => {
             proxyFields.style.display = proxyCheckbox.checked ? 'block' : 'none';
-            localStorage.setItem('sf_proxy_enabled', proxyCheckbox.checked ? '1' : '0');
+            saveAccounts();
         });
 
-        // ═══ SALVAR/CARREGAR CREDENCIAIS DO LOCALSTORAGE ═══
-        (function loadSavedCredentials() {
-            const savedEmail = localStorage.getItem('sf_email');
-            const savedPassword = localStorage.getItem('sf_password');
-            const savedSessions = localStorage.getItem('sf_sessions');
-            if (savedEmail) document.getElementById('login_email').value = savedEmail;
-            if (savedPassword) document.getElementById('login_password').value = savedPassword;
-            if (savedSessions) {
-                slider.value = savedSessions;
-                display.textContent = savedSessions;
-            }
-            // Proxy
+        // ═══ LOAD SAVED PROXY ═══
+        (function loadProxy() {
             const savedProxyEnabled = localStorage.getItem('sf_proxy_enabled');
             const savedProxyLogin = localStorage.getItem('sf_proxy_login');
             const savedProxyPass = localStorage.getItem('sf_proxy_password');
@@ -639,18 +859,6 @@
             if (savedProxyHost) document.getElementById('proxy_host').value = savedProxyHost;
             if (savedProxyCountry) document.getElementById('proxy_country').value = savedProxyCountry;
         })();
-
-        function saveCredentials(email, password) {
-            localStorage.setItem('sf_email', email);
-            localStorage.setItem('sf_password', password);
-            localStorage.setItem('sf_sessions', slider.value);
-            // Salvar proxy
-            localStorage.setItem('sf_proxy_enabled', proxyCheckbox.checked ? '1' : '0');
-            localStorage.setItem('sf_proxy_login', document.getElementById('proxy_login').value);
-            localStorage.setItem('sf_proxy_password', document.getElementById('proxy_password').value);
-            localStorage.setItem('sf_proxy_host', document.getElementById('proxy_host').value);
-            localStorage.setItem('sf_proxy_country', document.getElementById('proxy_country').value);
-        }
 
         // ═══ POLLING DE USUARIOS ONLINE ═══
         function pollOnlineUsers() {
@@ -672,21 +880,117 @@
                         '</tr>';
                     }).join('');
                 } else {
-                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#444;">Nenhum usu\u00e1rio online</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#444;">Nenhum usuário online</td></tr>';
                 }
             })
             .catch(() => {});
         }
 
-        // Iniciar polling de usuarios online a cada 5s
         pollOnlineUsers();
         onlineInterval = setInterval(pollOnlineUsers, 5000);
 
         // ═══ HEARTBEAT ═══
         function sendHeartbeat() {
-            const email = localStorage.getItem('sf_email');
-            if (email) {
-                fetch('/api/heartbeat', {
+            activeEmails.forEach(email => {
+                if (email) {
+                    fetch('/api/heartbeat', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        },
+                        credentials: 'same-origin',
+                        body: JSON.stringify({ email: email })
+                    }).catch(() => {});
+                }
+            });
+        }
+        heartbeatInterval = setInterval(sendHeartbeat, 60000);
+
+        // ═══ START BOT (ALL ACCOUNTS) ═══
+        function startBot() {
+            // Read current accounts from DOM
+            saveAccounts();
+
+            // Filter valid accounts
+            const validAccounts = accounts.filter(a => a.email && a.password);
+            if (validAccounts.length === 0) {
+                alert('Adicione pelo menos uma conta com email e senha!');
+                return;
+            }
+
+            document.getElementById('btn_start').disabled = true;
+            document.getElementById('btn_stop').disabled = false;
+            document.getElementById('logs_container').innerHTML = '<div class="log-entry log-info">[' + new Date().toLocaleTimeString() + '] Iniciando ' + validAccounts.length + ' conta(s)...</div>';
+
+            activeEmails = validAccounts.map(a => a.email);
+
+            const proxyConfig = {
+                proxy_enabled: proxyCheckbox.checked,
+                proxy_login: document.getElementById('proxy_login').value.trim(),
+                proxy_password: document.getElementById('proxy_password').value.trim(),
+                proxy_host: document.getElementById('proxy_host').value.trim(),
+                proxy_country: document.getElementById('proxy_country').value.trim(),
+            };
+
+            // Start all accounts
+            const startPromises = validAccounts.map(acc => {
+                return fetch('/api/start', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({
+                        email: acc.email,
+                        password: acc.password,
+                        num_sessions: acc.sessions,
+                        ...proxyConfig
+                    })
+                }).then(r => {
+                    if (!r.ok) {
+                        return r.json().then(j => ({ error: j.error || 'Erro HTTP ' + r.status, email: acc.email }));
+                    }
+                    return r.json().then(j => ({ ...j, email: acc.email }));
+                }).catch(err => ({ error: err.message, email: acc.email }));
+            });
+
+            Promise.all(startPromises).then(results => {
+                let hasError = false;
+                results.forEach(r => {
+                    if (r.error) {
+                        hasError = true;
+                        const logsEl = document.getElementById('logs_container');
+                        logsEl.innerHTML += '<div class="log-entry log-error">[' + new Date().toLocaleTimeString() + '] Erro (' + r.email + '): ' + r.error + '</div>';
+                    }
+                });
+
+                const successCount = results.filter(r => !r.error).length;
+                if (successCount > 0) {
+                    if (!pollInterval) {
+                        pollInterval = setInterval(pollStatus, 2000);
+                    }
+                    pollStatus();
+                }
+
+                if (successCount === 0) {
+                    document.getElementById('btn_start').disabled = false;
+                    document.getElementById('btn_stop').disabled = true;
+                }
+            });
+        }
+
+        // ═══ STOP BOT (ALL ACCOUNTS) ═══
+        function stopBot() {
+            document.getElementById('btn_stop').disabled = true;
+
+            // Read current emails from accounts
+            saveAccounts();
+            const emails = activeEmails.length > 0 ? activeEmails : accounts.filter(a => a.email).map(a => a.email);
+
+            const stopPromises = emails.map(email => {
+                return fetch('/api/stop', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -694,94 +998,10 @@
                     },
                     credentials: 'same-origin',
                     body: JSON.stringify({ email: email })
-                }).catch(() => {});
-            }
-        }
-        heartbeatInterval = setInterval(sendHeartbeat, 60000);
-
-        function startBot() {
-            const email = document.getElementById('login_email').value.trim();
-            const password = document.getElementById('login_password').value.trim();
-            const num_sessions = parseInt(slider.value);
-
-            if (!email || !password) {
-                alert('Email e senha são obrigatórios!');
-                return;
-            }
-
-            // Salvar credenciais no localStorage
-            saveCredentials(email, password);
-
-            document.getElementById('btn_start').disabled = true;
-            document.getElementById('btn_stop').disabled = false;
-
-            // Atualizar log visual
-            document.getElementById('logs_container').innerHTML = '<div class="log-entry log-info">[' + new Date().toLocaleTimeString() + '] Conectando ao seo-fast.bz...</div>';
-
-            fetch('/api/start', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest'
-                },
-                credentials: 'same-origin',
-                body: JSON.stringify({
-                    email, password, num_sessions,
-                    proxy_enabled: proxyCheckbox.checked,
-                    proxy_login: document.getElementById('proxy_login').value.trim(),
-                    proxy_password: document.getElementById('proxy_password').value.trim(),
-                    proxy_host: document.getElementById('proxy_host').value.trim(),
-                    proxy_country: document.getElementById('proxy_country').value.trim(),
-                })
-            })
-            .then(r => {
-                if (!r.ok) {
-                    return r.text().then(t => {
-                        try {
-                            const j = JSON.parse(t);
-                            throw new Error(j.error || 'Erro HTTP ' + r.status);
-                        } catch(e) {
-                            if (e.message.startsWith('Erro HTTP') || e.message !== 'Unexpected token') throw e;
-                            throw new Error('Erro HTTP ' + r.status + ': ' + t.substring(0, 100));
-                        }
-                    });
-                }
-                return r.json();
-            })
-            .then(data => {
-                if (data.error) {
-                    alert(data.error);
-                    document.getElementById('btn_start').disabled = false;
-                    document.getElementById('btn_stop').disabled = true;
-                } else {
-                    pollInterval = setInterval(pollStatus, 2000);
-                    pollStatus();
-                }
-            })
-            .catch(err => {
-                alert('Erro: ' + err.message);
-                document.getElementById('btn_start').disabled = false;
-                document.getElementById('btn_stop').disabled = true;
+                }).then(r => r.json()).catch(() => ({}));
             });
-        }
 
-        function stopBot() {
-            const email = document.getElementById('login_email').value.trim() || localStorage.getItem('sf_email') || '';
-            document.getElementById('btn_stop').disabled = true;
-            fetch('/api/stop', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest'
-                },
-                credentials: 'same-origin',
-                body: JSON.stringify({ email: email })
-            })
-            .then(r => {
-                if (!r.ok) throw new Error('HTTP ' + r.status);
-                return r.json();
-            })
-            .then(() => {
+            Promise.all(stopPromises).then(() => {
                 document.getElementById('btn_start').disabled = false;
                 document.getElementById('btn_stop').disabled = true;
                 if (pollInterval) {
@@ -789,27 +1009,51 @@
                     pollInterval = null;
                 }
                 document.getElementById('stat_status').innerHTML = '<span class="stopped-indicator"></span>OFFLINE';
-            })
-            .catch(err => {
-                console.error('Stop error:', err);
-                document.getElementById('btn_stop').disabled = false;
-                alert('Erro ao parar: ' + err.message);
+                activeEmails = [];
             });
         }
 
+        // ═══ POLL STATUS (ALL ACCOUNTS) ═══
         function pollStatus() {
-            const email = document.getElementById('login_email').value.trim() || localStorage.getItem('sf_email') || '';
-            fetch('/api/status?email=' + encodeURIComponent(email), {
-                headers: { 'X-Requested-With': 'XMLHttpRequest' },
-                credentials: 'same-origin'
-            })
-            .then(r => r.json())
-            .then(data => {
+            const emails = activeEmails.length > 0 ? activeEmails : accounts.filter(a => a.email).map(a => a.email);
+            if (emails.length === 0) return;
+
+            const statusPromises = emails.map(email => {
+                return fetch('/api/status?email=' + encodeURIComponent(email), {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    credentials: 'same-origin'
+                })
+                .then(r => r.json())
+                .then(data => ({ ...data, email }))
+                .catch(() => ({ running: false, total_earned: 0, total_views: 0, sessions: [], logs: [], email }));
+            });
+
+            Promise.all(statusPromises).then(allData => {
+                let totalEarned = 0;
+                let totalViews = 0;
+                let allSessions = [];
+                let allLogs = [];
+                let anyRunning = false;
+
+                allData.forEach(data => {
+                    totalEarned += data.total_earned || 0;
+                    totalViews += data.total_views || 0;
+                    if (data.running || (data.active_threads && data.active_threads > 0)) anyRunning = true;
+
+                    (data.sessions || []).forEach(s => {
+                        allSessions.push({ ...s, account_email: data.email });
+                    });
+
+                    (data.logs || []).forEach(log => {
+                        allLogs.push({ ...log, email: data.email });
+                    });
+                });
+
                 const statusEl = document.getElementById('stat_status');
-                const activeSessions = data.sessions.filter(s => 
+                const activeSessions = allSessions.filter(s =>
                     s.status !== 'stopped' && s.status !== 'idle'
                 ).length;
-                const hasActivity = data.running || activeSessions > 0 || data.active_threads > 0;
+                const hasActivity = anyRunning || activeSessions > 0;
 
                 if (hasActivity) {
                     statusEl.innerHTML = '<span class="running-indicator"></span>ONLINE';
@@ -823,77 +1067,102 @@
                         clearInterval(pollInterval);
                         pollInterval = null;
                     }
+                    activeEmails = [];
                 }
 
-                document.getElementById('stat_earned').textContent = data.total_earned.toFixed(3) + ' ₽';
-                document.getElementById('stat_views').textContent = data.total_views;
-                document.getElementById('stat_sessions').textContent = activeSessions + '/' + data.sessions.length;
+                document.getElementById('stat_earned').textContent = totalEarned.toFixed(3) + ' \u20bd';
+                document.getElementById('stat_views').textContent = totalViews;
+                document.getElementById('stat_sessions').textContent = activeSessions + '/' + allSessions.length;
 
                 // Sessions table
                 const tbody = document.getElementById('sessions_table');
-                if (data.sessions.length > 0) {
-                    tbody.innerHTML = data.sessions.map(s => {
+                if (allSessions.length > 0) {
+                    tbody.innerHTML = allSessions.map(s => {
                         let statusClass = 'status-idle';
                         let statusText = s.status;
                         if (s.status.startsWith('watching')) {
                             statusClass = 'status-watching';
-                            statusText = '▶ Assistindo';
+                            statusText = '\u25b6 Assistindo';
                         } else if (s.status === 'completed') {
                             statusClass = 'status-completed';
-                            statusText = '✓ Completo';
+                            statusText = '\u2713 Completo';
                         } else if (s.status.includes('error') || s.status.includes('failed')) {
                             statusClass = 'status-error';
-                            statusText = '✗ Erro';
+                            statusText = '\u2717 Erro';
                         } else if (s.status === 'getting_task' || s.status === 'starting') {
-                            statusText = '⟳ Buscando...';
+                            statusText = '\u27f3 Buscando...';
                         } else if (s.status === 'completing') {
-                            statusText = '⟳ Confirmando...';
+                            statusText = '\u27f3 Confirmando...';
                         } else if (s.status === 'waiting' || s.status === 'no_task') {
-                            statusText = '⏳ Aguardando';
+                            statusText = '\u23f3 Aguardando';
                         } else if (s.status === 'auth_needed' || s.status === 'session_expired') {
                             statusClass = 'status-auth';
-                            statusText = '🔑 Re-auth...';
+                            statusText = '\ud83d\udd11 Re-auth...';
                         }
 
+                        const shortEmail = s.account_email ? s.account_email.split('@')[0] : '-';
+
                         return '<tr>' +
+                            '<td style="font-size:0.65rem;color:var(--yellow);">' + shortEmail + '</td>' +
                             '<td>' + s.id + '</td>' +
                             '<td style="font-size:0.65rem">' + (s.device_name || s.device_id.substring(0, 20)) + '</td>' +
                             '<td style="font-size:0.7rem;color:var(--green-primary);">' + (s.ip || '-') + '</td>' +
                             '<td><span class="' + statusClass + '">' + statusText + '</span></td>' +
                             '<td>' + s.views + '</td>' +
-                            '<td>' + s.earned.toFixed(3) + ' ₽</td>' +
+                            '<td>' + s.earned.toFixed(3) + ' \u20bd</td>' +
                             '<td style="font-size:0.65rem">' + (s.current_video || '-') + '</td>' +
                         '</tr>';
                     }).join('');
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#444;">Nenhuma sess\u00e3o ativa</td></tr>';
                 }
 
-                // Logs
+                // Logs (merged, sorted by time)
                 const logsEl = document.getElementById('logs_container');
-                if (data.logs && data.logs.length > 0) {
-                    logsEl.innerHTML = data.logs.map(log => {
-                        return '<div class="log-entry log-' + log.level + '"><span class="log-time">[' + log.time + ']</span> ' + log.message + '</div>';
+                if (allLogs.length > 0) {
+                    // Show last 150 logs
+                    const recentLogs = allLogs.slice(-150);
+                    logsEl.innerHTML = recentLogs.map(log => {
+                        const emailTag = log.email ? '<span style="color:var(--yellow);">[' + log.email.split('@')[0] + ']</span> ' : '';
+                        return '<div class="log-entry log-' + log.level + '"><span class="log-time">[' + log.time + ']</span> ' + emailTag + log.message + '</div>';
                     }).join('');
                     logsEl.scrollTop = logsEl.scrollHeight;
                 }
-            })
-            .catch(() => {});
+            });
         }
 
-        // Check inicial: se o bot ja esta rodando ao carregar a pagina
+        // ═══ INITIAL STATE CHECK ═══
         (function checkInitialState() {
-            const email = document.getElementById('login_email').value.trim() || localStorage.getItem('sf_email') || '';
-            if (!email) return;
-            fetch('/api/status?email=' + encodeURIComponent(email), {
-                headers: { 'X-Requested-With': 'XMLHttpRequest' },
-                credentials: 'same-origin'
-            })
-            .then(r => r.json())
-            .then(data => {
-                const activeSessions = data.sessions.filter(s => 
-                    s.status !== 'stopped' && s.status !== 'idle'
-                ).length;
-                const hasActivity = data.running || activeSessions > 0 || data.active_threads > 0;
-                if (hasActivity) {
+            loadAccounts();
+            const emails = accounts.filter(a => a.email).map(a => a.email);
+            if (emails.length === 0) return;
+
+            // Check if any account is already running
+            const checks = emails.map(email => {
+                return fetch('/api/status?email=' + encodeURIComponent(email), {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    credentials: 'same-origin'
+                })
+                .then(r => r.json())
+                .then(data => ({ ...data, email }))
+                .catch(() => ({ running: false, sessions: [], email }));
+            });
+
+            Promise.all(checks).then(allData => {
+                let anyRunning = false;
+                allData.forEach(data => {
+                    const activeSessions = (data.sessions || []).filter(s =>
+                        s.status !== 'stopped' && s.status !== 'idle'
+                    ).length;
+                    if (data.running || activeSessions > 0 || (data.active_threads && data.active_threads > 0)) {
+                        anyRunning = true;
+                        if (!activeEmails.includes(data.email)) {
+                            activeEmails.push(data.email);
+                        }
+                    }
+                });
+
+                if (anyRunning) {
                     document.getElementById('btn_start').disabled = true;
                     document.getElementById('btn_stop').disabled = false;
                     document.getElementById('stat_status').innerHTML = '<span class="running-indicator"></span>ONLINE';
@@ -902,8 +1171,7 @@
                     }
                     pollStatus();
                 }
-            })
-            .catch(() => {});
+            });
         })();
     </script>
 </body>

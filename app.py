@@ -38,6 +38,15 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.urandom(32).hex()
 
+# ===== RAILWAY / REVERSE PROXY SUPPORT =====
+# Railway (and similar PaaS) uses a reverse proxy, so we need to trust
+# the X-Forwarded-* headers for proper request handling.
+from werkzeug.middleware.proxy_fix import ProxyFix
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
+# Allowed domain from environment (Railway sets RAILWAY_PUBLIC_DOMAIN)
+ALLOWED_DOMAIN = os.environ.get('RAILWAY_PUBLIC_DOMAIN', '')
+
 # ===== PROTECAO ANTI-SCRAPING =====
 
 BLOCKED_BOTS = [
@@ -76,6 +85,7 @@ def anti_scraping_guard():
         origin = (request.headers.get('Origin', '') or '').lower()
         req_ref = (request.headers.get('Referer', '') or '').lower()
         xhr = request.headers.get('X-Requested-With', '')
+        # Accept if any of these headers are present (browser AJAX)
         if origin or req_ref or xhr == 'XMLHttpRequest':
             pass
         else:
@@ -817,7 +827,7 @@ def start_bot(email, password, num_sessions, proxy_config=None):
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", allowed_domain=ALLOWED_DOMAIN)
 
 
 @app.route("/api/start", methods=["POST"])
