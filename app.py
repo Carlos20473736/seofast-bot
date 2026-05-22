@@ -81,7 +81,7 @@ TIMER_MULTIPLIER = 0.60
 MAX_TIMER_SECONDS = 60
 PROXY_PORT = 824
 PROXY_COUNTRY = "br"
-IP_ROTATION_INTERVAL = 900  # 15 minutos
+IP_ROTATION_INTERVAL = 300  # 5 minutos - rotacao mais frequente = mais videos disponiveis
 
 # ===== DISPOSITIVOS ANDROID =====
 ANDROID_DEVICES = [
@@ -594,7 +594,7 @@ def session_worker(session_obj):
                 session_obj.consecutive_empty = 0
 
             # Forcar rotacao se muitas tentativas vazias
-            if session_obj.consecutive_empty >= 25:
+            if session_obj.consecutive_empty >= 10:
                 add_log(session_obj.owner_email, f"[S{session_obj.session_id}] {session_obj.consecutive_empty}x sem tarefa, forcando rotacao...", "warning")
                 session_obj.last_rotation_time = 0
                 session_obj.consecutive_empty = 0
