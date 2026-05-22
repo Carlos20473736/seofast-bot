@@ -120,6 +120,14 @@ MAX_TIMER_SECONDS = 60   # Rejeitar tarefas com timer > 60s
 PROXY_TYPE = "socks5"    # socks5 (porta 824) ou http (porta 823)
 PROXY_PORT = 824         # Porta SOCKS5 do DataImpulse
 
+# === ROTACAO DE IP E PAIS ===
+IP_ROTATION_INTERVAL = 900  # Rotacionar IP a cada 15 minutos (900 segundos)
+ROTATE_COUNTRIES = True     # Ativar rotacao automatica de paises
+COUNTRY_POOL = [
+    "br", "ru", "ua", "us", "de", "fr", "gb", "es", "it", "pt",
+    "pl", "nl", "in", "mx", "ar", "co", "tr", "id", "th", "vn",
+]
+
 
 # ===== GERADORES DE IDENTIDADE UNICA POR SESSAO =====
 
@@ -191,6 +199,95 @@ def generate_session_identity(session_id):
 
 users_state = {}  # email -> user_state dict
 users_lock = threading.Lock()
+
+# === PERSISTENCIA: Arquivo para salvar contas ativas ===
+PERSISTENCE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "active_bots.json")
+
+
+def save_active_bots(email, password, num_sessions, proxy_config):
+    """Salva uma conta ativa no arquivo de persistencia."""
+    try:
+        data = load_active_bots()
+        # Atualizar ou adicionar
+        data[email] = {
+            "email": email,
+            "password": password,
+            "num_sessions": num_sessions,
+            "proxy_config": proxy_config,
+            "started_at": datetime.now().isoformat(),
+        }
+        with open(PERSISTENCE_FILE, "w") as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        print(f"[PERSIST] Erro ao salvar: {e}")
+
+
+def remove_active_bot(email):
+    """Remove uma conta do arquivo de persistencia (quando usuario clica PARAR)."""
+    try:
+        data = load_active_bots()
+        data.pop(email, None)
+        with open(PERSISTENCE_FILE, "w") as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        print(f"[PERSIST] Erro ao remover: {e}")
+
+
+def load_active_bots():
+    """Carrega contas ativas do arquivo de persistencia."""
+    try:
+        if os.path.exists(PERSISTENCE_FILE):
+            with open(PERSISTENCE_FILE, "r") as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"[PERSIST] Erro ao carregar: {e}")
+    return {}
+
+
+def auto_resume_bots():
+    """
+    Chamado na inicializacao do servidor.
+    Relanca automaticamente todas as contas que estavam ativas antes do restart.
+    Garante execucao 24h sem depender do navegador.
+    """
+    data = load_active_bots()
+    if not data:
+        print("[AUTO-RESUME] Nenhuma conta para resumir.")
+        return
+
+    print(f"[AUTO-RESUME] Resumindo {len(data)} conta(s) ativas...")
+    for email, info in data.items():
+        try:
+            password = info["password"]
+            num_sessions = info.get("num_sessions", 50)
+            proxy_config = info.get("proxy_config", {})
+
+            # Verificar se ja esta rodando (evitar duplicatas)
+            user_state = get_user_state(email)
+            active_threads = [t for t in user_state.get("threads", []) if t.is_alive()]
+            if active_threads:
+                print(f"[AUTO-RESUME] {email} ja esta rodando, pulando.")
+                continue
+
+            # Registrar no tracking de usuarios online
+            with online_users_lock:
+                online_users[email] = {
+                    "started_at": datetime.now().strftime("%H:%M:%S"),
+                    "sessions": num_sessions,
+                    "last_seen": time.time()
+                }
+
+            # Lancar bot em background
+            threading.Thread(
+                target=start_bot,
+                args=(email, password, num_sessions, proxy_config),
+                daemon=True
+            ).start()
+
+            print(f"[AUTO-RESUME] {email} iniciado com {num_sessions} sessoes.")
+            time.sleep(2)  # Espacar inicializacoes
+        except Exception as e:
+            print(f"[AUTO-RESUME] Erro ao resumir {email}: {e}")
 
 
 def get_user_state(email):
@@ -270,12 +367,12 @@ def generate_app_token(device_id):
     return hashlib.sha256(raw.encode('utf-8')).hexdigest()
 
 
-def build_proxy_url(proxy_config, session_id):
+def build_proxy_url(proxy_config, session_id, country_override=None, rotation_id=None):
     """
     Constroi a URL do proxy para uma sessao especifica.
-    Usa sessid no username para manter IP fixo por sessao (30 min).
     Suporta SOCKS5 (porta 824) e HTTP (porta 823).
-    SOCKS5 e mais estavel e testado com DataImpulse.
+    - country_override: permite mudar o pais dinamicamente na rotacao
+    - rotation_id: identificador unico para forcar novo IP
     """
     if not proxy_config or not proxy_config.get("enabled"):
         return None
@@ -283,13 +380,14 @@ def build_proxy_url(proxy_config, session_id):
     login = proxy_config.get("login", "")
     password = proxy_config.get("password", "")
     host = proxy_config.get("host", "gw.dataimpulse.com")
-    country = proxy_config.get("country", "br")
+    country = country_override or proxy_config.get("country", "br")
 
     if not login or not password:
         return None
 
-    # Usar sessid FIXO por sessao para manter o mesmo IP por 30 min
-    sessid_value = f"seofast{session_id}_{int(time.time()) % 100000}"
+    # Sessid unico: combina session_id + rotation_id para forcar novo IP
+    rot_id = rotation_id or int(time.time()) % 100000
+    sessid_value = f"sf{session_id}r{rot_id}"
 
     # Formato DataImpulse com parametros de sessao
     login_with_params = f"{login}__cr.{country};sessid.{sessid_value}"
@@ -306,7 +404,7 @@ def build_proxy_url(proxy_config, session_id):
 class SeoFastSession:
     """Sessao individual - faz login proprio e opera independente."""
 
-    def __init__(self, session_id, email, password, owner_email, identity, proxy_url=None):
+    def __init__(self, session_id, email, password, owner_email, identity, proxy_url=None, proxy_config=None):
         self.session_id = session_id
         self.email = email
         self.password = password
@@ -315,10 +413,14 @@ class SeoFastSession:
         self.user_agent = identity["user_agent"]
         self.device_info = identity["device_info"]
         self.proxy_url = proxy_url
+        self.proxy_config = proxy_config  # Guardado para rotacao
         self.app_token = generate_app_token(self.device_id)
         self.phpsessid = None
         self.hash_ajax = None
         self.earned = 0.0
+        self.rotation_count = 0
+        self.last_rotation_time = time.time()
+        self.current_country = None
         self.views = 0
         self.status = "idle"
         self.current_video = None
@@ -663,6 +765,51 @@ class SeoFastSession:
         time.sleep(random.uniform(2, 5))
         return self.login()
 
+    def rotate_ip(self):
+        """
+        Rotaciona o IP e o pais do proxy.
+        Gera novo sessid para forcar DataImpulse a dar um IP novo.
+        Escolhe um pais aleatorio do pool se ROTATE_COUNTRIES estiver ativo.
+        Depois refaz login com o novo IP.
+        """
+        if not self.proxy_config or not self.proxy_config.get("enabled"):
+            return True
+
+        self.rotation_count += 1
+
+        # Escolher novo pais
+        if ROTATE_COUNTRIES:
+            self.current_country = random.choice(COUNTRY_POOL)
+        else:
+            self.current_country = self.proxy_config.get("country", "br")
+
+        # Gerar novo proxy URL com novo sessid (= novo IP)
+        new_proxy_url = build_proxy_url(
+            self.proxy_config,
+            self.session_id,
+            country_override=self.current_country,
+            rotation_id=int(time.time()) % 100000
+        )
+        self.proxy_url = new_proxy_url
+        self.last_rotation_time = time.time()
+
+        # Fechar conexao antiga e criar nova com novo proxy
+        if self.http:
+            try:
+                self.http.close()
+            except Exception:
+                pass
+
+        add_log_for_user(self.owner_email, f"[S{self.session_id}] Rotacao #{self.rotation_count}: novo IP ({self.current_country.upper()})", "info")
+
+        # Refazer login com novo IP
+        return self.login()
+
+    def should_rotate(self):
+        """Verifica se esta na hora de rotacionar o IP."""
+        elapsed = time.time() - self.last_rotation_time
+        return elapsed >= IP_ROTATION_INTERVAL
+
     def run_cycle(self):
         user_state = get_user_state(self.owner_email)
         self.status = "getting_task"
@@ -773,6 +920,16 @@ def session_worker(session_obj):
 
     while not user_state["stop_requested"]:
         try:
+            # === ROTACAO AUTOMATICA DE IP E PAIS ===
+            # Verifica se ja passou o intervalo de rotacao
+            if session_obj.should_rotate():
+                session_obj.status = "rotating"
+                if not session_obj.rotate_ip():
+                    add_log_for_user(session_obj.owner_email, f"[S{session_obj.session_id}] Falha na rotacao, tentando novamente...", "error")
+                    time.sleep(5)
+                    continue
+                consecutive_empty = 0  # Reset apos rotacao
+
             success = session_obj.run_cycle()
             if not success:
                 if session_obj.status == "login_failed":
@@ -783,8 +940,14 @@ def session_worker(session_obj):
                     delay = random.uniform(3, 5)
                 elif consecutive_empty <= 10:
                     delay = random.uniform(5, 8)
-                else:
+                elif consecutive_empty <= 20:
                     delay = random.uniform(8, 12)
+                else:
+                    # Se ficou muito tempo sem tarefa, forcar rotacao de IP
+                    add_log_for_user(session_obj.owner_email, f"[S{session_obj.session_id}] Sem tarefas ha muito tempo, forcando rotacao...", "warning")
+                    session_obj.last_rotation_time = 0  # Forcar rotacao no proximo ciclo
+                    consecutive_empty = 0
+                    delay = random.uniform(2, 4)
                 for _ in range(int(delay)):
                     if user_state["stop_requested"]:
                         break
@@ -825,8 +988,13 @@ def start_bot(email, password, num_sessions, proxy_config=None):
         # Gerar identidade unica para cada sessao
         identity = generate_session_identity(i + 1)
 
-        # Gerar proxy URL unica para cada sessao (sessid fixo = IP sticky)
-        proxy_url = build_proxy_url(proxy_config, i + 1)
+        # Escolher pais inicial: aleatorio do pool se rotacao ativa
+        initial_country = None
+        if ROTATE_COUNTRIES and proxy_config and proxy_config.get("enabled"):
+            initial_country = COUNTRY_POOL[i % len(COUNTRY_POOL)]  # Distribuir paises uniformemente
+
+        # Gerar proxy URL unica para cada sessao
+        proxy_url = build_proxy_url(proxy_config, i + 1, country_override=initial_country)
 
         session_obj = SeoFastSession(
             session_id=i + 1,
@@ -835,7 +1003,9 @@ def start_bot(email, password, num_sessions, proxy_config=None):
             owner_email=email,
             identity=identity,
             proxy_url=proxy_url,
+            proxy_config=proxy_config,
         )
+        session_obj.current_country = initial_country or (proxy_config.get("country", "br") if proxy_config else "br")
 
         with user_state["lock"]:
             user_state["sessions"].append({
@@ -910,6 +1080,9 @@ def api_start():
 
     threading.Thread(target=start_bot, args=(email, password, num_sessions, proxy_config), daemon=True).start()
 
+    # Salvar no arquivo de persistencia para auto-resume apos restart
+    save_active_bots(email, password, num_sessions, proxy_config)
+
     return jsonify({"status": "started", "sessions": num_sessions})
 
 
@@ -930,6 +1103,9 @@ def api_stop():
     # Remover do tracking de usuarios online
     with online_users_lock:
         online_users.pop(email, None)
+
+    # Remover do arquivo de persistencia (NAO vai mais auto-resumir)
+    remove_active_bot(email)
 
     add_log_for_user(email, "Parando todas as sessoes...", "warning")
     return jsonify({"status": "stopping"})
@@ -971,6 +1147,8 @@ def api_status():
                 "views": obj.views,
                 "current_video": obj.current_video,
                 "ip": obj.current_ip or "-",
+                "country": getattr(obj, 'current_country', '-') or '-',
+                "rotations": getattr(obj, 'rotation_count', 0),
             })
 
         return jsonify({
@@ -986,15 +1164,26 @@ def api_status():
 
 @app.route("/api/online")
 def api_online():
-    """Retorna lista de usuarios online com seus emails e info."""
+    """Retorna lista de usuarios online com seus emails e info.
+    NAO expira mais por heartbeat - bot roda 24h independente do navegador.
+    So sai da lista quando o usuario clica PARAR."""
     with online_users_lock:
-        now = time.time()
-        expired = [email for email, info in online_users.items() if now - info["last_seen"] > 300]
-        for email in expired:
-            del online_users[email]
+        # Verificar quais usuarios realmente tem threads ativas
+        # (em vez de depender de heartbeat do navegador)
+        actually_running = []
+        for email, info in list(online_users.items()):
+            if email in users_state:
+                ustate = users_state[email]
+                active_threads = [t for t in ustate.get("threads", []) if t.is_alive()]
+                if not active_threads and not ustate.get("running"):
+                    # Bot parou sozinho (todas threads morreram)
+                    del online_users[email]
+                    continue
+            actually_running.append(email)
 
         users_list = []
-        for email, info in online_users.items():
+        for email in actually_running:
+            info = online_users.get(email, {})
             # Buscar ganho e views do estado do usuario
             user_earned = 0.0
             user_views = 0
@@ -1004,8 +1193,8 @@ def api_online():
                 user_views = ustate.get("total_views", 0)
             users_list.append({
                 "email": email,
-                "started_at": info["started_at"],
-                "sessions": info["sessions"],
+                "started_at": info.get("started_at", "-"),
+                "sessions": info.get("sessions", 0),
                 "earned": user_earned,
                 "views": user_views,
             })
@@ -1026,6 +1215,15 @@ def api_heartbeat():
             if email in online_users:
                 online_users[email]["last_seen"] = time.time()
     return jsonify({"ok": True})
+
+
+# === AUTO-RESUME: Relanca bots que estavam ativos antes do restart ===
+# Executar com delay para dar tempo do servidor inicializar
+def _delayed_auto_resume():
+    time.sleep(10)  # Esperar servidor estabilizar
+    auto_resume_bots()
+
+threading.Thread(target=_delayed_auto_resume, daemon=True).start()
 
 
 if __name__ == "__main__":
