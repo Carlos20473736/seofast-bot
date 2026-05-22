@@ -633,11 +633,13 @@
                             <th>#</th>
                             <th>Email</th>
                             <th>Sessões</th>
+                            <th>Views</th>
+                            <th>Ganho</th>
                             <th>Desde</th>
                         </tr>
                     </thead>
                     <tbody id="online_users_table">
-                        <tr><td colspan="4" style="text-align:center;color:#444;">Nenhum usuário online</td></tr>
+                        <tr><td colspan="6" style="text-align:center;color:#444;">Nenhum usuário online</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -876,11 +878,13 @@
                             '<td>' + (i + 1) + '</td>' +
                             '<td style="color:var(--green-primary);">' + u.email + '</td>' +
                             '<td>' + u.sessions + '</td>' +
+                            '<td>' + (u.views || 0) + '</td>' +
+                            '<td style="color:var(--green-primary);">' + (u.earned || 0).toFixed(3) + ' \u20bd</td>' +
                             '<td>' + u.started_at + '</td>' +
                         '</tr>';
                     }).join('');
                 } else {
-                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#444;">Nenhum usuário online</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#444;">Nenhum usu\u00e1rio online</td></tr>';
                 }
             })
             .catch(() => {});

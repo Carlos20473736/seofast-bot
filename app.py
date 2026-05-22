@@ -960,10 +960,19 @@ def api_online():
 
         users_list = []
         for email, info in online_users.items():
+            # Buscar ganho e views do estado do usuario
+            user_earned = 0.0
+            user_views = 0
+            if email in users_state:
+                ustate = users_state[email]
+                user_earned = round(ustate.get("total_earned", 0.0), 4)
+                user_views = ustate.get("total_views", 0)
             users_list.append({
                 "email": email,
                 "started_at": info["started_at"],
                 "sessions": info["sessions"],
+                "earned": user_earned,
+                "views": user_views,
             })
 
     return jsonify({
