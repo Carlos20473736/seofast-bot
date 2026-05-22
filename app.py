@@ -358,6 +358,7 @@ class SeoFastSession:
         self.current_video = None
         self.current_ip = None
         self.http = None  # httpx.Client
+        self._use_http2 = True  # Tenta HTTP/2 primeiro, muda para False se falhar
         # === ESTATISTICAS ===
         self.total_attempts = 0
         self.tasks_found = 0
@@ -449,11 +450,12 @@ class SeoFastSession:
             headers["cookie"] = f"PHPSESSID={self.phpsessid}"
         return headers
 
-    def _create_http(self):
-        """Cria cliente httpx com proxy SOCKS5 e suporte HTTP/2."""
+    def _create_http(self, use_http2=True):
+        """Cria cliente httpx com proxy SOCKS5. Tenta HTTP/2, fallback para HTTP/1.1."""
         if self.proxy_url:
-            # IMPORTANTE: http2=True deve ser passado no SyncProxyTransport
-            transport = httpx_socks.SyncProxyTransport.from_url(self.proxy_url, http2=True)
+            transport = httpx_socks.SyncProxyTransport.from_url(
+                self.proxy_url, http2=use_http2
+            )
             client = httpx.Client(
                 transport=transport,
                 verify=False,
@@ -462,7 +464,7 @@ class SeoFastSession:
             )
         else:
             client = httpx.Client(
-                http2=True,
+                http2=use_http2,
                 verify=False,
                 timeout=30.0,
                 follow_redirects=True,
@@ -489,19 +491,43 @@ class SeoFastSession:
             except Exception:
                 pass
 
-        self.http = self._create_http()
-
-        # Detectar IP
-        if self.proxy_url:
-            self.detect_ip()
-            add_log_for_user(self.owner_email,
-                f"[S{self.session_id}] IP: {self.current_ip} | UA: {self.device_info['brand']} {self.device_info['model']}",
-                "info")
+        # Tentar HTTP/2 primeiro, fallback para HTTP/1.1
+        last_error = None
+        for use_h2 in [self._use_http2, not self._use_http2]:
+            try:
+                self.http = self._create_http(use_http2=use_h2)
+                # Detectar IP
+                if self.proxy_url:
+                    self.detect_ip()
+                    if use_h2:
+                        add_log_for_user(self.owner_email,
+                            f"[S{self.session_id}] IP: {self.current_ip} | UA: {self.device_info['brand']} {self.device_info['model']}",
+                            "info")
+                # Testar conexao com GET
+                headers = self._get_nav_headers()
+                r = self.http.get(BASE_URL, headers=headers)
+                self._use_http2 = use_h2  # Lembrar qual funcionou
+                break  # Sucesso, sair do loop
+            except Exception as e:
+                last_error = e
+                if self.http:
+                    try:
+                        self.http.close()
+                    except Exception:
+                        pass
+                if not use_h2:
+                    # Ambos falharam
+                    self.status = "login_failed"
+                    err_msg = str(last_error)[:80]
+                    add_log_for_user(self.owner_email,
+                        f"[S{self.session_id}] Login erro: {err_msg}",
+                        "error")
+                    return False
+                # HTTP/2 falhou, tentar HTTP/1.1
+                time.sleep(1)
+                continue
 
         try:
-            # Step 1: GET /webapp/ (redireciona para ?pg=login, obtem PHPSESSID + hash_ajax)
-            headers = self._get_nav_headers()
-            r = self.http.get(BASE_URL, headers=headers)
 
             # Extrair PHPSESSID do header set-cookie
             for key, value in r.headers.multi_items():
@@ -648,7 +674,7 @@ class SeoFastSession:
                     self.http.close()
                 except Exception:
                     pass
-                self.http = self._create_http()
+                self.http = self._create_http(use_http2=self._use_http2)
                 time.sleep(2 * attempt)
                 continue
             except Exception:
