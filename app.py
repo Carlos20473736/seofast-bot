@@ -554,18 +554,30 @@ class SeoFastSession:
 def session_worker(session_obj):
     user_state = get_user_state(session_obj.owner_email)
 
-    # Login com retry
-    for attempt in range(5):
-        if user_state["stop_requested"]:
-            session_obj.status = "stopped"
-            return
+    # Login com retry INFINITO (troca IP a cada tentativa)
+    logged_in = False
+    attempt = 0
+    while not user_state["stop_requested"]:
+        attempt += 1
         if session_obj.login():
+            logged_in = True
             break
-        add_log(session_obj.owner_email, f"[S{session_obj.session_id}] Login falhou! Tentando novamente em {10 + attempt * 5}s...", "error")
-        time.sleep(10 + attempt * 5)
-    else:
-        session_obj.status = "login_failed"
-        add_log(session_obj.owner_email, f"[S{session_obj.session_id}] Login falhou 5x, encerrada.", "error")
+        # Trocar IP antes de tentar novamente (novo sessid)
+        if session_obj.proxy_config and session_obj.proxy_config.get("enabled"):
+            session_obj.proxy_url = build_proxy_url(
+                session_obj.proxy_config, session_obj.session_id,
+                rotation_id=int(time.time() * 1000) % 1000000 + attempt
+            )
+            add_log(session_obj.owner_email, f"[S{session_obj.session_id}] Trocando IP (tentativa {attempt})...", "warning")
+        # Backoff curto: 3s nas primeiras 5, depois 10s, depois 30s
+        if attempt <= 5:
+            time.sleep(3)
+        elif attempt <= 10:
+            time.sleep(10)
+        else:
+            time.sleep(30)
+    if not logged_in:
+        session_obj.status = "stopped"
         return
 
     # Loop principal
@@ -606,8 +618,32 @@ def session_worker(session_obj):
                     time.sleep(1)
 
         except Exception as e:
-            add_log(session_obj.owner_email, f"[S{session_obj.session_id}] Erro: {str(e)[:60]}", "error")
-            time.sleep(5)
+            err_msg = str(e)[:80]
+            add_log(session_obj.owner_email, f"[S{session_obj.session_id}] Erro: {err_msg}", "error")
+            # Se erro de conexao/SSL, trocar IP e re-logar
+            if "SSL" in err_msg or "EOF" in err_msg or "disconnect" in err_msg.lower() or "timeout" in err_msg.lower():
+                add_log(session_obj.owner_email, f"[S{session_obj.session_id}] Reconectando com novo IP...", "warning")
+                if session_obj.proxy_config and session_obj.proxy_config.get("enabled"):
+                    session_obj.proxy_url = build_proxy_url(
+                        session_obj.proxy_config, session_obj.session_id,
+                        rotation_id=int(time.time() * 1000) % 1000000
+                    )
+                time.sleep(3)
+                # Re-login com novo IP
+                for retry in range(5):
+                    if user_state["stop_requested"]:
+                        break
+                    if session_obj.login():
+                        session_obj.consecutive_empty = 0
+                        break
+                    if session_obj.proxy_config and session_obj.proxy_config.get("enabled"):
+                        session_obj.proxy_url = build_proxy_url(
+                            session_obj.proxy_config, session_obj.session_id,
+                            rotation_id=int(time.time() * 1000) % 1000000 + retry
+                        )
+                    time.sleep(5)
+            else:
+                time.sleep(5)
 
     session_obj.status = "stopped"
     if session_obj.client:
@@ -653,8 +689,8 @@ def start_bot(email, password, num_sessions, proxy_config=None):
         t = threading.Thread(target=session_worker, args=(session_obj,), daemon=True)
         t.start()
         threads.append(t)
-        # Escalonar inicio para nao sobrecarregar proxy
-        time.sleep(random.uniform(2, 4))
+        # Escalonar inicio para nao sobrecarregar proxy (5-8s entre cada)
+        time.sleep(random.uniform(5, 8))
 
     with user_state["lock"]:
         user_state["threads"] = threads
