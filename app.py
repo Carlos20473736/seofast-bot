@@ -1,17 +1,14 @@
 """
 SeoFast Multi-Session Bot - Web Application (Multi-User)
 Flask backend com bot SeoFast integrado.
+Usa httpx com HTTP/2 para resolver problemas de TLS/403.
 Login automatico + coleta de hash_ajax.
 Multiplas sessoes HTTP paralelas com login independente.
 CADA USUARIO TEM SEU PROPRIO ESTADO ISOLADO.
 CADA SESSAO TEM SEU PROPRIO IP (via proxy), USER-AGENT E DEVICE ID.
 
-CORRECAO v3: Headers e formato de body baseados em capturas reais do app nativo.
-- AJAX usa JSON (application/json; charset=utf-8), NAO form-encoded
-- Campo "ajax_func" (nao "act") e "id_device" (nao "device_id")
-- Headers AJAX minimalistas (sem sec-ch-ua, sec-fetch-*)
-- accept-language: ru-RU (nao pt-PT)
-- referer: https://seo-fast.bz/ (nao /webapp/?pg=job)
+v4: Migrado para httpx (HTTP/2) - corrige erro 403 no login.
+    IP fixo Brasil. Logs detalhados. Timer otimizado 60%.
 """
 
 import hashlib
@@ -19,32 +16,26 @@ import json
 import os
 import random
 import re
-import ssl
 import string
 import threading
 import time
 import warnings
 from datetime import datetime
+from urllib.parse import quote as url_quote
 
-import requests
-import urllib3
+import httpx
+import httpx_socks
 from flask import Flask, render_template, request, jsonify, Response
-from requests.adapters import HTTPAdapter
-from urllib3.util.ssl_ import create_urllib3_context
 
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore")
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.urandom(32).hex()
 
 # ===== RAILWAY / REVERSE PROXY SUPPORT =====
-# Railway (and similar PaaS) uses a reverse proxy, so we need to trust
-# the X-Forwarded-* headers for proper request handling.
 from werkzeug.middleware.proxy_fix import ProxyFix
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
-# Allowed domain from environment (Railway sets RAILWAY_PUBLIC_DOMAIN)
 ALLOWED_DOMAIN = os.environ.get('RAILWAY_PUBLIC_DOMAIN', '')
 
 # ===== PROTECAO ANTI-SCRAPING =====
@@ -85,7 +76,6 @@ def anti_scraping_guard():
         origin = (request.headers.get('Origin', '') or '').lower()
         req_ref = (request.headers.get('Referer', '') or '').lower()
         xhr = request.headers.get('X-Requested-With', '')
-        # Accept if any of these headers are present (browser AJAX)
         if origin or req_ref or xhr == 'XMLHttpRequest':
             pass
         else:
@@ -117,16 +107,13 @@ PACKAGE_NAME = "com.example.seofast"
 # === CONFIGURACOES DE OTIMIZACAO ===
 TIMER_MULTIPLIER = 0.60  # Usar 60% do timer (testado e aceito pelo servidor)
 MAX_TIMER_SECONDS = 60   # Rejeitar tarefas com timer > 60s
-PROXY_TYPE = "socks5"    # socks5 (porta 824) ou http (porta 823)
 PROXY_PORT = 824         # Porta SOCKS5 do DataImpulse
 
-# === ROTACAO DE IP E PAIS ===
+# === IP FIXO BRASIL ===
+PROXY_COUNTRY = "br"  # Usar apenas Brasil
+
+# === ROTACAO DE IP ===
 IP_ROTATION_INTERVAL = 900  # Rotacionar IP a cada 15 minutos (900 segundos)
-ROTATE_COUNTRIES = True     # Ativar rotacao automatica de paises
-COUNTRY_POOL = [
-    "br", "ru", "ua", "us", "de", "fr", "gb", "es", "it", "pt",
-    "pl", "nl", "in", "mx", "ar", "co", "tr", "id", "th", "vn",
-]
 
 
 # ===== GERADORES DE IDENTIDADE UNICA POR SESSAO =====
@@ -195,12 +182,16 @@ def generate_session_identity(session_id):
     }
 
 
+def generate_app_token(device_id):
+    raw = f"{device_id}:{PACKAGE_NAME}:{APP_SECRET}"
+    return hashlib.sha256(raw.encode('utf-8')).hexdigest()
+
+
 # ===== MULTI-USER STATE MANAGEMENT =====
 
-users_state = {}  # email -> user_state dict
+users_state = {}
 users_lock = threading.Lock()
 
-# === PERSISTENCIA: Arquivo para salvar contas ativas ===
 PERSISTENCE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "active_bots.json")
 
 
@@ -208,7 +199,6 @@ def save_active_bots(email, password, num_sessions, proxy_config):
     """Salva uma conta ativa no arquivo de persistencia."""
     try:
         data = load_active_bots()
-        # Atualizar ou adicionar
         data[email] = {
             "email": email,
             "password": password,
@@ -223,7 +213,7 @@ def save_active_bots(email, password, num_sessions, proxy_config):
 
 
 def remove_active_bot(email):
-    """Remove uma conta do arquivo de persistencia (quando usuario clica PARAR)."""
+    """Remove uma conta do arquivo de persistencia."""
     try:
         data = load_active_bots()
         data.pop(email, None)
@@ -245,11 +235,7 @@ def load_active_bots():
 
 
 def auto_resume_bots():
-    """
-    Chamado na inicializacao do servidor.
-    Relanca automaticamente todas as contas que estavam ativas antes do restart.
-    Garante execucao 24h sem depender do navegador.
-    """
+    """Relanca automaticamente todas as contas ativas apos restart."""
     data = load_active_bots()
     if not data:
         print("[AUTO-RESUME] Nenhuma conta para resumir.")
@@ -262,14 +248,12 @@ def auto_resume_bots():
             num_sessions = info.get("num_sessions", 50)
             proxy_config = info.get("proxy_config", {})
 
-            # Verificar se ja esta rodando (evitar duplicatas)
             user_state = get_user_state(email)
             active_threads = [t for t in user_state.get("threads", []) if t.is_alive()]
             if active_threads:
                 print(f"[AUTO-RESUME] {email} ja esta rodando, pulando.")
                 continue
 
-            # Registrar no tracking de usuarios online
             with online_users_lock:
                 online_users[email] = {
                     "started_at": datetime.now().strftime("%H:%M:%S"),
@@ -277,7 +261,6 @@ def auto_resume_bots():
                     "last_seen": time.time()
                 }
 
-            # Lancar bot em background
             threading.Thread(
                 target=start_bot,
                 args=(email, password, num_sessions, proxy_config),
@@ -285,7 +268,7 @@ def auto_resume_bots():
             ).start()
 
             print(f"[AUTO-RESUME] {email} iniciado com {num_sessions} sessoes.")
-            time.sleep(2)  # Espacar inicializacoes
+            time.sleep(2)
         except Exception as e:
             print(f"[AUTO-RESUME] Erro ao resumir {email}: {e}")
 
@@ -318,61 +301,16 @@ def add_log_for_user(email, message, level="info"):
             state["logs"] = state["logs"][-500:]
 
 
-# Tracking de usuarios online (email -> info)
 online_users = {}
 online_users_lock = threading.Lock()
 
 
-# ===== TLS ADAPTER =====
+# ===== FUNCOES DE PROXY =====
 
-class TLSAdapter(HTTPAdapter):
-    def __init__(self, *args, **kwargs):
-        retry = urllib3.util.retry.Retry(
-            total=3, backoff_factor=2,
-            status_forcelist=[500, 502, 503, 504],
-            allowed_methods=["POST", "GET"],
-            raise_on_status=False,
-        )
-        kwargs["max_retries"] = retry
-        super().__init__(*args, **kwargs)
-
-    def init_poolmanager(self, *args, **kwargs):
-        ctx = create_urllib3_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        ctx.set_ciphers("DEFAULT:@SECLEVEL=1")
-        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-        ctx.maximum_version = ssl.TLSVersion.TLSv1_2
-        kwargs["ssl_context"] = ctx
-        return super().init_poolmanager(*args, **kwargs)
-
-
-# ===== FUNCOES AUXILIARES =====
-
-def create_http_session(proxy_url=None):
-    """Cria sessao HTTP com proxy opcional."""
-    s = requests.Session()
-    s.mount("https://", TLSAdapter())
-    s.verify = False
-    if proxy_url:
-        s.proxies = {
-            "http": proxy_url,
-            "https": proxy_url,
-        }
-    return s
-
-
-def generate_app_token(device_id):
-    raw = f"{device_id}:{PACKAGE_NAME}:{APP_SECRET}"
-    return hashlib.sha256(raw.encode('utf-8')).hexdigest()
-
-
-def build_proxy_url(proxy_config, session_id, country_override=None, rotation_id=None):
+def build_proxy_url(proxy_config, session_id, rotation_id=None):
     """
-    Constroi a URL do proxy para uma sessao especifica.
-    Suporta SOCKS5 (porta 824) e HTTP (porta 823).
-    - country_override: permite mudar o pais dinamicamente na rotacao
-    - rotation_id: identificador unico para forcar novo IP
+    Constroi a URL do proxy SOCKS5 para uma sessao especifica.
+    Sempre usa Brasil (PROXY_COUNTRY).
     """
     if not proxy_config or not proxy_config.get("enabled"):
         return None
@@ -380,29 +318,23 @@ def build_proxy_url(proxy_config, session_id, country_override=None, rotation_id
     login = proxy_config.get("login", "")
     password = proxy_config.get("password", "")
     host = proxy_config.get("host", "gw.dataimpulse.com")
-    country = country_override or proxy_config.get("country", "br")
 
     if not login or not password:
         return None
 
-    # Sessid unico: combina session_id + rotation_id para forcar novo IP
     rot_id = rotation_id or int(time.time()) % 100000
     sessid_value = f"sf{session_id}r{rot_id}"
 
-    # Formato DataImpulse com parametros de sessao
-    login_with_params = f"{login}__cr.{country};sessid.{sessid_value}"
+    # Formato DataImpulse: login__cr.COUNTRY__sd.SESSID
+    login_with_params = f"{login}__cr.{PROXY_COUNTRY}__sd.{sessid_value}"
 
-    # SOCKS5 (porta 824) - mais estavel, testado
-    if PROXY_TYPE == "socks5":
-        return f"socks5://{login_with_params}:{password}@{host}:{PROXY_PORT}"
-    else:
-        return f"http://{login_with_params}:{password}@{host}:823"
+    return f"socks5://{login_with_params}:{password}@{host}:{PROXY_PORT}"
 
 
-# ===== CLASSE DO BOT =====
+# ===== CLASSE DO BOT (httpx) =====
 
 class SeoFastSession:
-    """Sessao individual - faz login proprio e opera independente."""
+    """Sessao individual com httpx - faz login proprio e opera independente."""
 
     def __init__(self, session_id, email, password, owner_email, identity, proxy_url=None, proxy_config=None):
         self.session_id = session_id
@@ -413,30 +345,45 @@ class SeoFastSession:
         self.user_agent = identity["user_agent"]
         self.device_info = identity["device_info"]
         self.proxy_url = proxy_url
-        self.proxy_config = proxy_config  # Guardado para rotacao
+        self.proxy_config = proxy_config
         self.app_token = generate_app_token(self.device_id)
         self.phpsessid = None
         self.hash_ajax = None
         self.earned = 0.0
         self.rotation_count = 0
         self.last_rotation_time = time.time()
-        self.current_country = None
+        self.current_country = PROXY_COUNTRY
         self.views = 0
         self.status = "idle"
         self.current_video = None
         self.current_ip = None
-        self.http = None
+        self.http = None  # httpx.Client
+        # === ESTATISTICAS ===
+        self.total_attempts = 0
+        self.tasks_found = 0
+        self.tasks_completed = 0
+        self.tasks_failed = 0
+        self.tasks_skipped = 0
+        self.no_task_count = 0
+        self.consecutive_empty = 0
+        self.session_start_time = time.time()
+        self.last_task_time = None
+
+    def _get_chrome_major(self):
+        if "Chrome/" in self.user_agent:
+            return self.user_agent.split("Chrome/")[1].split(".")[0]
+        return "138"
 
     def _get_nav_headers(self):
         """Headers para navegacao WebView (GET pages)."""
-        chrome_ver = self.user_agent.split("Chrome/")[1].split(" ")[0] if "Chrome/" in self.user_agent else "138.0.7204.179"
-        chrome_major = chrome_ver.split(".")[0]
+        chrome_major = self._get_chrome_major()
         headers = {
-            "User-Agent": self.user_agent,
+            "host": "seo-fast.bz",
             "sec-ch-ua": f'"Not)A;Brand";v="8", "Chromium";v="{chrome_major}", "Android WebView";v="{chrome_major}"',
             "sec-ch-ua-mobile": "?1",
             "sec-ch-ua-platform": '"Android"',
             "upgrade-insecure-requests": "1",
+            "user-agent": self.user_agent,
             "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
             "x-app-token": self.app_token,
             "x-app-version": APP_VERSION,
@@ -456,10 +403,9 @@ class SeoFastSession:
 
     def _get_login_headers(self):
         """Headers para POST login (WebView AJAX form-encoded)."""
-        chrome_ver = self.user_agent.split("Chrome/")[1].split(" ")[0] if "Chrome/" in self.user_agent else "138.0.7204.179"
-        chrome_major = chrome_ver.split(".")[0]
+        chrome_major = self._get_chrome_major()
         headers = {
-            "Host": "seo-fast.bz",
+            "host": "seo-fast.bz",
             "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
             "x-app-token": self.app_token,
             "sec-ch-ua-platform": '"Android"',
@@ -468,8 +414,8 @@ class SeoFastSession:
             "sec-ch-ua-mobile": "?1",
             "x-app-version": APP_VERSION,
             "x-requested-with": "XMLHttpRequest",
-            "accept": "text/javascript, application/javascript, application/ecmascript, application/x-ecmascript, */*; q=0.01",
-            "User-Agent": self.user_agent,
+            "accept": "*/*",
+            "user-agent": self.user_agent,
             "origin": "https://seo-fast.bz",
             "sec-fetch-site": "same-origin",
             "sec-fetch-mode": "cors",
@@ -484,19 +430,10 @@ class SeoFastSession:
         return headers
 
     def _get_ajax_headers(self):
-        """
-        Headers para AJAX nativo (get_task, complete_task, up_data).
-        BASEADO NAS CAPTURAS REAIS DO APP:
-        - Content-Type: application/json; charset=utf-8
-        - Accept: application/json, text/plain, */*
-        - Accept-Language: ru-RU (NAO pt-PT!)
-        - Referer: https://seo-fast.bz/ (NAO /webapp/?pg=job)
-        - SEM sec-ch-ua, sec-fetch-* headers
-        - Accept-Encoding: gzip (apenas)
-        """
+        """Headers para AJAX nativo (get_task, complete_task, up_data)."""
         headers = {
-            "Host": "seo-fast.bz",
-            "User-Agent": self.user_agent,
+            "host": "seo-fast.bz",
+            "user-agent": self.user_agent,
             "x-app-token": self.app_token,
             "x-app-version": APP_VERSION,
             "x-device-id": self.device_id,
@@ -513,80 +450,124 @@ class SeoFastSession:
         return headers
 
     def _create_http(self):
-        s = create_http_session(proxy_url=self.proxy_url)
-        return s
+        """Cria cliente httpx com proxy SOCKS5 e suporte HTTP/2."""
+        if self.proxy_url:
+            # IMPORTANTE: http2=True deve ser passado no SyncProxyTransport
+            transport = httpx_socks.SyncProxyTransport.from_url(self.proxy_url, http2=True)
+            client = httpx.Client(
+                transport=transport,
+                verify=False,
+                timeout=30.0,
+                follow_redirects=True,
+            )
+        else:
+            client = httpx.Client(
+                http2=True,
+                verify=False,
+                timeout=30.0,
+                follow_redirects=True,
+            )
+        return client
 
     def detect_ip(self):
         """Detecta o IP real da sessao via proxy."""
         try:
-            r = self.http.get("https://api.ipify.org/?format=json", timeout=15)
+            r = self.http.get("https://api.ipify.org/?format=json")
             if r.status_code == 200:
                 self.current_ip = r.json().get("ip", "?")
         except Exception:
             self.current_ip = "erro"
 
     def login(self):
-        """Faz login e obtem PHPSESSID + hash_ajax."""
+        """Faz login e obtem PHPSESSID + hash_ajax usando httpx."""
         self.status = "logging_in"
+
+        # Fechar cliente antigo se existir
+        if self.http:
+            try:
+                self.http.close()
+            except Exception:
+                pass
+
         self.http = self._create_http()
 
-        # Detectar IP se usando proxy
+        # Detectar IP
         if self.proxy_url:
             self.detect_ip()
-            add_log_for_user(self.owner_email, f"[S{self.session_id}] IP: {self.current_ip} | UA: {self.device_info['brand']} {self.device_info['model']}", "info")
+            add_log_for_user(self.owner_email,
+                f"[S{self.session_id}] IP: {self.current_ip} | UA: {self.device_info['brand']} {self.device_info['model']}",
+                "info")
 
         try:
-            # Step 1: GET / para obter PHPSESSID
+            # Step 1: GET /webapp/ (redireciona para ?pg=login, obtem PHPSESSID + hash_ajax)
             headers = self._get_nav_headers()
-            r = self.http.get(BASE_URL, headers=headers, timeout=30)
-            for c in self.http.cookies:
-                if c.name == "PHPSESSID":
-                    self.phpsessid = c.value
+            r = self.http.get(BASE_URL, headers=headers)
 
-            # Step 2: GET ?pg=login para obter hash_ajax
-            time.sleep(random.uniform(0.5, 1.5))
-            headers = self._get_nav_headers()
-            r = self.http.get(BASE_URL + "?pg=login", headers=headers, timeout=30)
-            m = re.search(r"var\s+hash_ajax\s*=\s*['\"]([a-f0-9]+)['\"]", r.text)
+            # Extrair PHPSESSID do header set-cookie
+            for key, value in r.headers.multi_items():
+                if key.lower() == "set-cookie" and "PHPSESSID" in value:
+                    match = re.search(r"PHPSESSID=([^;]+)", value)
+                    if match:
+                        self.phpsessid = match.value if hasattr(match, 'value') else match.group(1)
+
+            # Tambem verificar cookies do httpx
+            for cookie in self.http.cookies.jar:
+                if cookie.name == "PHPSESSID":
+                    self.phpsessid = cookie.value
+
+            # Buscar hash_ajax na resposta (pode ter sido redirecionado para login)
+            m = re.search(r"var\s+hash_ajax\s*=\s*'([a-f0-9]+)'", r.text)
             self.hash_ajax = m.group(1) if m else None
 
             if not self.hash_ajax:
+                # Tentar GET ?pg=login explicitamente
+                time.sleep(random.uniform(0.3, 0.8))
+                headers = self._get_nav_headers()
+                r = self.http.get(f"{BASE_URL}?pg=login", headers=headers)
+                m = re.search(r"var\s+hash_ajax\s*=\s*'([a-f0-9]+)'", r.text)
+                self.hash_ajax = m.group(1) if m else None
+
+            if not self.hash_ajax:
                 self.status = "login_failed"
-                add_log_for_user(self.owner_email, f"[S{self.session_id}] hash_ajax nao encontrado na pagina de login", "error")
+                add_log_for_user(self.owner_email,
+                    f"[S{self.session_id}] FALHA: hash_ajax nao encontrado (status={r.status_code})",
+                    "error")
                 return False
 
-            # Step 3: POST login (form-encoded, como o WebView faz)
-            time.sleep(random.uniform(0.5, 1.5))
+            # Step 2: POST login
+            time.sleep(random.uniform(0.3, 0.8))
             login_headers = self._get_login_headers()
-            login_data = f"login={requests.utils.quote(self.email)}&password={requests.utils.quote(self.password)}&hash={self.hash_ajax}&ajax_func=login"
+            login_data = f"login={url_quote(self.email)}&password={url_quote(self.password)}&hash={self.hash_ajax}&ajax_func=login"
 
             r = self.http.post(
-                BASE_URL + "ajax/ajax_login.php",
-                data=login_data,
+                f"{BASE_URL}ajax/ajax_login.php",
+                content=login_data,
                 headers=login_headers,
-                timeout=30,
             )
 
-            if r.status_code != 200 or "pg=job" not in r.text:
+            if "pg=job" not in r.text and "location.replace" not in r.text:
                 self.status = "login_failed"
-                add_log_for_user(self.owner_email, f"[S{self.session_id}] Login rejeitado (status={r.status_code})", "error")
+                resp_preview = r.text[:80] if r.text else "vazio"
+                add_log_for_user(self.owner_email,
+                    f"[S{self.session_id}] Login rejeitado: {resp_preview}",
+                    "error")
                 return False
 
-            # Step 4: GET ?pg=job para obter hash_ajax atualizado
-            time.sleep(random.uniform(1.0, 2.0))
+            # Step 3: GET ?pg=job para obter hash_ajax atualizado
+            time.sleep(random.uniform(0.5, 1.0))
             headers = self._get_nav_headers()
-            r = self.http.get(BASE_URL + "?pg=job", headers=headers, timeout=30)
-            m = re.search(r"var\s+hash_ajax\s*=\s*['\"]([a-f0-9]+)['\"]", r.text)
+            r = self.http.get(f"{BASE_URL}?pg=job", headers=headers)
+            m = re.search(r"var\s+hash_ajax\s*=\s*'([a-f0-9]+)'", r.text)
             if m:
                 self.hash_ajax = m.group(1)
 
-            # Atualizar PHPSESSID caso tenha mudado
-            for c in self.http.cookies:
-                if c.name == "PHPSESSID":
-                    self.phpsessid = c.value
+            # Atualizar PHPSESSID
+            for cookie in self.http.cookies.jar:
+                if cookie.name == "PHPSESSID":
+                    self.phpsessid = cookie.value
 
-            # Step 5: up_data - registrar dispositivo (JSON via ajax_data.php)
-            time.sleep(random.uniform(1.0, 2.0))
+            # Step 4: up_data - registrar dispositivo
+            time.sleep(random.uniform(0.5, 1.0))
             up_data_body = json.dumps({
                 "ajax_func": "up_data",
                 "hash_ajax": self.hash_ajax,
@@ -604,71 +585,53 @@ class SeoFastSession:
                     "timestamp": int(time.time() * 1000),
                     "emulator_type": "bluestacks",
                     "emulator_details": {
-                        "build_properties": False,
-                        "hardware": False,
-                        "files": False,
-                        "memu": False,
-                        "bluestacks": True,
-                        "nox": False,
-                        "genymotion": False,
-                        "google_emulator": False,
-                        "masking_detected": True,
+                        "build_properties": False, "hardware": False, "files": False,
+                        "memu": False, "bluestacks": True, "nox": False,
+                        "genymotion": False, "google_emulator": False, "masking_detected": True,
                     },
                     "google_email": self.email,
                     "hardware": {
-                        "brand": self.device_info["brand"],
-                        "model": self.device_info["model"],
-                        "device": self.device_info["device"],
-                        "hardware": self.device_info["hardware"],
-                        "manufacturer": self.device_info["brand"],
-                        "product": self.device_info["product"],
+                        "brand": self.device_info["brand"], "model": self.device_info["model"],
+                        "device": self.device_info["device"], "hardware": self.device_info["hardware"],
+                        "manufacturer": self.device_info["brand"], "product": self.device_info["product"],
                         "board": self.device_info["board"],
                     },
-                    "os": {
-                        "sdk_int": self.device_info["sdk"],
-                        "release": self.device_info["release"],
-                        "incremental": self.device_info["build"],
-                    },
+                    "os": {"sdk_int": self.device_info["sdk"], "release": self.device_info["release"], "incremental": self.device_info["build"]},
                     "display": {"width_px": 1080, "height_px": 1920, "density_dpi": 480, "density": 3},
-                    "locale": {"language": "pt", "country": "PT", "variant": ""},
+                    "locale": {"language": "pt", "country": "BR", "variant": ""},
                     "timezone": "America/Sao_Paulo",
                     "extra": {
                         "fingerprint": f"Android/aosp_marlin/marlin:{self.device_info['release']}/{self.device_info['build']}/3793265:user/release-keys",
-                        "tags": "release-keys",
-                        "type": "user",
-                        "user": "build",
-                        "host": "ubuntu",
+                        "tags": "release-keys", "type": "user", "user": "build", "host": "ubuntu",
                     },
-                    "masking_detected": True,
-                    "masking_evidence": {},
+                    "masking_detected": True, "masking_evidence": {},
                 }),
             })
             ajax_headers = self._get_ajax_headers()
-            r = self.http.post(
-                BASE_URL + "ajax/ajax_data.php",
-                data=up_data_body,
-                headers=ajax_headers,
-                timeout=30,
-            )
-            add_log_for_user(self.owner_email, f"[S{self.session_id}] up_data: {r.text[:60] if r else 'erro'}", "info")
+            self.http.post(f"{BASE_URL}ajax/ajax_data.php", content=up_data_body, headers=ajax_headers)
 
             self.status = "ready"
+            add_log_for_user(self.owner_email,
+                f"[S{self.session_id}] LOGIN OK | Hash: {self.hash_ajax[:8]}...",
+                "success")
             return True
 
         except Exception as e:
             self.status = "login_failed"
-            add_log_for_user(self.owner_email, f"[S{self.session_id}] Login error: {str(e)[:80]}", "error")
+            add_log_for_user(self.owner_email,
+                f"[S{self.session_id}] Login erro: {str(e)[:80]}",
+                "error")
             return False
 
     def _post_json(self, endpoint, body_dict, max_retries=3):
-        """Envia POST JSON (formato correto para AJAX nativo do app)."""
+        """Envia POST JSON via httpx."""
         url = BASE_URL + endpoint
         headers = self._get_ajax_headers()
         body = json.dumps(body_dict)
 
         for attempt in range(1, max_retries + 1):
             try:
-                resp = self.http.post(url, data=body, headers=headers, timeout=30)
+                resp = self.http.post(url, content=body, headers=headers)
                 if resp.status_code == 200:
                     try:
                         return resp.json()
@@ -679,15 +642,16 @@ class SeoFastSession:
                     continue
                 else:
                     return None
-            except (requests.exceptions.ConnectionError,
-                    requests.exceptions.ChunkedEncodingError):
-                old_cookies = self.http.cookies.copy()
-                self.http.close()
+            except (httpx.ConnectError, httpx.ReadError, httpx.WriteError, httpx.ConnectTimeout):
+                # Reconectar
+                try:
+                    self.http.close()
+                except Exception:
+                    pass
                 self.http = self._create_http()
-                self.http.cookies.update(old_cookies)
                 time.sleep(2 * attempt)
                 continue
-            except requests.exceptions.RequestException:
+            except Exception:
                 if attempt < max_retries:
                     time.sleep(2 * attempt)
                     continue
@@ -695,7 +659,8 @@ class SeoFastSession:
         return None
 
     def get_task(self):
-        """Busca tarefa usando JSON com ajax_func (formato correto do app nativo)."""
+        """Busca tarefa usando JSON."""
+        self.total_attempts += 1
         body = {
             "ajax_func": "get_task",
             "id_device": self.device_id,
@@ -704,7 +669,7 @@ class SeoFastSession:
         return self._post_json("ajax/ajax_views.php", body)
 
     def complete_task(self, id_status):
-        """Completa tarefa usando JSON com ajax_func (formato correto do app nativo)."""
+        """Completa tarefa usando JSON."""
         device_json = json.dumps({
             "device_id": self.device_id,
             "device_type": "emulator",
@@ -713,43 +678,26 @@ class SeoFastSession:
             "timestamp": int(time.time() * 1000),
             "emulator_type": "bluestacks",
             "emulator_details": {
-                "build_properties": False,
-                "hardware": False,
-                "files": False,
-                "memu": False,
-                "bluestacks": True,
-                "nox": False,
-                "genymotion": False,
-                "google_emulator": False,
-                "masking_detected": True,
+                "build_properties": False, "hardware": False, "files": False,
+                "memu": False, "bluestacks": True, "nox": False,
+                "genymotion": False, "google_emulator": False, "masking_detected": True,
             },
             "google_email": self.email,
             "hardware": {
-                "brand": self.device_info["brand"],
-                "model": self.device_info["model"],
-                "device": self.device_info["device"],
-                "hardware": self.device_info["hardware"],
-                "manufacturer": self.device_info["brand"],
-                "product": self.device_info["product"],
+                "brand": self.device_info["brand"], "model": self.device_info["model"],
+                "device": self.device_info["device"], "hardware": self.device_info["hardware"],
+                "manufacturer": self.device_info["brand"], "product": self.device_info["product"],
                 "board": self.device_info["board"],
             },
-            "os": {
-                "sdk_int": self.device_info["sdk"],
-                "release": self.device_info["release"],
-                "incremental": self.device_info["build"],
-            },
+            "os": {"sdk_int": self.device_info["sdk"], "release": self.device_info["release"], "incremental": self.device_info["build"]},
             "display": {"width_px": 1080, "height_px": 1920, "density_dpi": 480, "density": 3},
-            "locale": {"language": "pt", "country": "PT", "variant": ""},
+            "locale": {"language": "pt", "country": "BR", "variant": ""},
             "timezone": "America/Sao_Paulo",
             "extra": {
                 "fingerprint": f"Android/aosp_marlin/marlin:{self.device_info['release']}/{self.device_info['build']}/3793265:user/release-keys",
-                "tags": "release-keys",
-                "type": "user",
-                "user": "build",
-                "host": "ubuntu",
+                "tags": "release-keys", "type": "user", "user": "build", "host": "ubuntu",
             },
-            "masking_detected": True,
-            "masking_evidence": {},
+            "masking_detected": True, "masking_evidence": {},
         })
         body = {
             "ajax_func": "complete_task",
@@ -760,47 +708,32 @@ class SeoFastSession:
         }
         return self._post_json("ajax/ajax_views.php", body)
 
-    def refresh_session(self):
-        add_log_for_user(self.owner_email, f"[S{self.session_id}] Refazendo login...", "warning")
-        time.sleep(random.uniform(2, 5))
-        return self.login()
-
     def rotate_ip(self):
-        """
-        Rotaciona o IP e o pais do proxy.
-        Gera novo sessid para forcar DataImpulse a dar um IP novo.
-        Escolhe um pais aleatorio do pool se ROTATE_COUNTRIES estiver ativo.
-        Depois refaz login com o novo IP.
-        """
+        """Rotaciona o IP gerando novo sessid (novo IP do Brasil)."""
         if not self.proxy_config or not self.proxy_config.get("enabled"):
             return True
 
         self.rotation_count += 1
 
-        # Escolher novo pais
-        if ROTATE_COUNTRIES:
-            self.current_country = random.choice(COUNTRY_POOL)
-        else:
-            self.current_country = self.proxy_config.get("country", "br")
-
-        # Gerar novo proxy URL com novo sessid (= novo IP)
+        # Gerar novo proxy URL com novo sessid = novo IP
         new_proxy_url = build_proxy_url(
             self.proxy_config,
             self.session_id,
-            country_override=self.current_country,
             rotation_id=int(time.time()) % 100000
         )
         self.proxy_url = new_proxy_url
         self.last_rotation_time = time.time()
 
-        # Fechar conexao antiga e criar nova com novo proxy
+        # Fechar conexao antiga
         if self.http:
             try:
                 self.http.close()
             except Exception:
                 pass
 
-        add_log_for_user(self.owner_email, f"[S{self.session_id}] Rotacao #{self.rotation_count}: novo IP ({self.current_country.upper()})", "info")
+        add_log_for_user(self.owner_email,
+            f"[S{self.session_id}] Rotacao #{self.rotation_count}: novo IP (BR)",
+            "info")
 
         # Refazer login com novo IP
         return self.login()
@@ -811,12 +744,18 @@ class SeoFastSession:
         return elapsed >= IP_ROTATION_INTERVAL
 
     def run_cycle(self):
+        """Executa um ciclo: buscar tarefa -> assistir -> completar."""
         user_state = get_user_state(self.owner_email)
         self.status = "getting_task"
         result = self.get_task()
 
         if not result:
             self.status = "error"
+            self.no_task_count += 1
+            self.consecutive_empty += 1
+            add_log_for_user(self.owner_email,
+                f"[S{self.session_id}] Erro de conexao ao buscar tarefa",
+                "error")
             return False
 
         # Se veio resposta raw (nao JSON valido)
@@ -824,60 +763,77 @@ class SeoFastSession:
             raw_text = result.get("raw", "")
             if "войти" in raw_text.lower() or "login" in raw_text.lower() or "Авторизуйтесь" in raw_text:
                 self.status = "relogging"
-                if self.refresh_session():
-                    return False
-                else:
-                    self.status = "login_failed"
-                    return False
+                add_log_for_user(self.owner_email,
+                    f"[S{self.session_id}] Sessao expirada, refazendo login...",
+                    "warning")
+                return self.login()
             self.status = "waiting"
+            self.no_task_count += 1
+            self.consecutive_empty += 1
             return False
 
         if not result.get("status") and "mess" in result:
             msg = result.get("mess", "")
             if "войти" in msg.lower() or "Попробуйте" in msg or "Авторизуйтесь" in msg:
                 self.status = "relogging"
-                if self.refresh_session():
-                    return False
-                else:
-                    self.status = "login_failed"
-                    return False
-            elif "нет заданий" in msg.lower():
+                add_log_for_user(self.owner_email,
+                    f"[S{self.session_id}] Sessao expirada, refazendo login...",
+                    "warning")
+                return self.login()
+            elif "нет заданий" in msg.lower() or "Ожидание" in msg:
                 self.status = "no_task"
+                self.no_task_count += 1
+                self.consecutive_empty += 1
+                # Log a cada 10 tentativas vazias para nao poluir
+                if self.consecutive_empty % 10 == 1:
+                    add_log_for_user(self.owner_email,
+                        f"[S{self.session_id}] Sem tarefa ({self.consecutive_empty}x seguidas)",
+                        "warning")
             else:
-                # "Ожидание..." (Aguardando) - normal, tentar novamente
                 self.status = "waiting"
+                self.consecutive_empty += 1
             return False
 
         if "video_id" not in result:
             self.status = "no_task"
+            self.no_task_count += 1
+            self.consecutive_empty += 1
             return False
 
+        # === TAREFA ENCONTRADA! ===
         video_id = result["video_id"]
         timer = int(result.get("timer", 15))
         id_status = result.get("id_status", "")
         self.current_video = video_id
+        self.tasks_found += 1
+        self.consecutive_empty = 0
+        self.last_task_time = time.time()
 
-        # === FILTRO DE TAREFAS LONGAS ===
-        # Tarefas com timer > 60s pagam quase igual mas demoram muito
+        # Filtro de tarefas longas
         if timer > MAX_TIMER_SECONDS:
-            add_log_for_user(self.owner_email, f"[S{self.session_id}] SKIP {video_id} (timer={timer}s > {MAX_TIMER_SECONDS}s)", "warning")
+            self.tasks_skipped += 1
+            add_log_for_user(self.owner_email,
+                f"[S{self.session_id}] SKIP: {video_id} (timer={timer}s > {MAX_TIMER_SECONDS}s)",
+                "warning")
             self.current_video = None
             self.status = "skipped"
             return False
 
+        # === ASSISTINDO VIDEO ===
         self.status = "watching"
+        optimized_timer = max(int(timer * TIMER_MULTIPLIER), 5)
+        time_saved = timer - optimized_timer
 
-        # === TIMER OTIMIZADO ===
-        # Testado: servidor aceita complete_task com 60% do timer original
-        # Economia de 40% do tempo por tarefa = ~40% mais tarefas/hora
-        optimized_timer = max(int(timer * TIMER_MULTIPLIER), 5)  # minimo 5s
-        add_log_for_user(self.owner_email, f"[S{self.session_id}] {video_id} ({timer}s -> {optimized_timer}s)")
+        add_log_for_user(self.owner_email,
+            f"[S{self.session_id}] ASSISTINDO: {video_id} ({timer}s -> {optimized_timer}s, -{time_saved}s)",
+            "info")
 
         for _ in range(optimized_timer):
             if user_state["stop_requested"]:
                 return False
             time.sleep(1)
 
+        # === COMPLETANDO ===
         self.status = "completing"
         complete_result = self.complete_task(id_status)
 
@@ -886,6 +842,7 @@ class SeoFastSession:
             balance = complete_result.get("balance", "0")
             self.earned += float(price) if price else 0
             self.views += 1
+            self.tasks_completed += 1
             self.status = "completed"
             self.current_video = None
 
@@ -893,14 +850,19 @@ class SeoFastSession:
                 user_state["total_earned"] += float(price) if price else 0
                 user_state["total_views"] += 1
 
-            add_log_for_user(self.owner_email, f"[S{self.session_id}] +{price} R | Saldo: {balance} R", "success")
+            add_log_for_user(self.owner_email,
+                f"[S{self.session_id}] GANHOU +{price} R | Saldo: {balance} R | Total sessao: {self.earned:.3f} R",
+                "success")
             return True
         else:
+            self.tasks_failed += 1
             self.status = "complete_failed"
             err_msg = ""
             if complete_result and "mess" in complete_result:
                 err_msg = f" ({complete_result['mess'][:40]})"
-            add_log_for_user(self.owner_email, f"[S{self.session_id}] Falha confirmar {video_id}{err_msg}", "error")
+            add_log_for_user(self.owner_email,
+                f"[S{self.session_id}] FALHA ao completar {video_id}{err_msg}",
+                "error")
             return False
 
 
@@ -910,61 +872,87 @@ def session_worker(session_obj):
     user_state = get_user_state(session_obj.owner_email)
 
     if not session_obj.login():
-        add_log_for_user(session_obj.owner_email, f"[S{session_obj.session_id}] Login falhou!", "error")
-        session_obj.status = "login_failed"
-        return
-
-    add_log_for_user(session_obj.owner_email, f"[S{session_obj.session_id}] Login OK | Hash: {session_obj.hash_ajax[:8]}... | {session_obj.device_info['brand']} {session_obj.device_info['model']}", "success")
-
-    consecutive_empty = 0
+        add_log_for_user(session_obj.owner_email,
+            f"[S{session_obj.session_id}] Login falhou! Tentando novamente em 10s...",
+            "error")
+        # Retry login 3 vezes
+        for retry in range(3):
+            time.sleep(10)
+            if user_state["stop_requested"]:
+                session_obj.status = "stopped"
+                return
+            if session_obj.login():
+                break
+        else:
+            session_obj.status = "login_failed"
+            add_log_for_user(session_obj.owner_email,
+                f"[S{session_obj.session_id}] Login falhou 3x, sessao encerrada.",
+                "error")
+            return
 
     while not user_state["stop_requested"]:
         try:
-            # === ROTACAO AUTOMATICA DE IP E PAIS ===
-            # Verifica se ja passou o intervalo de rotacao
+            # === ROTACAO AUTOMATICA DE IP ===
             if session_obj.should_rotate():
                 session_obj.status = "rotating"
                 if not session_obj.rotate_ip():
-                    add_log_for_user(session_obj.owner_email, f"[S{session_obj.session_id}] Falha na rotacao, tentando novamente...", "error")
+                    add_log_for_user(session_obj.owner_email,
+                        f"[S{session_obj.session_id}] Falha na rotacao, tentando novamente...",
+                        "error")
                     time.sleep(5)
+                    if not session_obj.rotate_ip():
+                        # Se falhar 2x, esperar mais
+                        time.sleep(15)
                     continue
-                consecutive_empty = 0  # Reset apos rotacao
+                session_obj.consecutive_empty = 0
 
             success = session_obj.run_cycle()
             if not success:
                 if session_obj.status == "login_failed":
-                    break
-                consecutive_empty += 1
-                # Espera adaptativa: começa curta e aumenta se nao tem tarefa
-                if consecutive_empty <= 3:
-                    delay = random.uniform(3, 5)
-                elif consecutive_empty <= 10:
-                    delay = random.uniform(5, 8)
-                elif consecutive_empty <= 20:
-                    delay = random.uniform(8, 12)
-                else:
-                    # Se ficou muito tempo sem tarefa, forcar rotacao de IP
-                    add_log_for_user(session_obj.owner_email, f"[S{session_obj.session_id}] Sem tarefas ha muito tempo, forcando rotacao...", "warning")
-                    session_obj.last_rotation_time = 0  # Forcar rotacao no proximo ciclo
-                    consecutive_empty = 0
+                    # Tentar re-login
+                    time.sleep(10)
+                    if not session_obj.login():
+                        break
+
+                # Espera adaptativa
+                if session_obj.consecutive_empty <= 3:
                     delay = random.uniform(2, 4)
+                elif session_obj.consecutive_empty <= 10:
+                    delay = random.uniform(4, 7)
+                elif session_obj.consecutive_empty <= 20:
+                    delay = random.uniform(7, 12)
+                else:
+                    # Forcar rotacao de IP apos muitas tentativas vazias
+                    add_log_for_user(session_obj.owner_email,
+                        f"[S{session_obj.session_id}] {session_obj.consecutive_empty}x sem tarefa, forcando rotacao...",
+                        "warning")
+                    session_obj.last_rotation_time = 0
+                    session_obj.consecutive_empty = 0
+                    delay = 2
+
                 for _ in range(int(delay)):
                     if user_state["stop_requested"]:
                         break
                     time.sleep(1)
             else:
-                consecutive_empty = 0
-                # Apos sucesso, espera curta para pegar proximo video rapido
-                delay = random.uniform(1, 3)
+                # Apos sucesso, espera curta
+                delay = random.uniform(1, 2)
                 for _ in range(int(delay)):
                     if user_state["stop_requested"]:
                         break
                     time.sleep(1)
         except Exception as e:
-            add_log_for_user(session_obj.owner_email, f"[S{session_obj.session_id}] Erro: {str(e)[:50]}", "error")
+            add_log_for_user(session_obj.owner_email,
+                f"[S{session_obj.session_id}] Erro: {str(e)[:60]}",
+                "error")
             time.sleep(5)
 
     session_obj.status = "stopped"
+    if session_obj.http:
+        try:
+            session_obj.http.close()
+        except Exception:
+            pass
 
 
 def start_bot(email, password, num_sessions, proxy_config=None):
@@ -980,21 +968,13 @@ def start_bot(email, password, num_sessions, proxy_config=None):
         user_state["logs"] = []
         user_state["start_time"] = datetime.now().strftime("%H:%M:%S")
 
-    proxy_status = "COM PROXY" if (proxy_config and proxy_config.get("enabled")) else "SEM PROXY"
+    proxy_status = "COM PROXY (BR)" if (proxy_config and proxy_config.get("enabled")) else "SEM PROXY"
     add_log_for_user(email, f"Iniciando {num_sessions} sessoes ({proxy_status})...", "info")
 
     threads = []
     for i in range(num_sessions):
-        # Gerar identidade unica para cada sessao
         identity = generate_session_identity(i + 1)
-
-        # Escolher pais inicial: aleatorio do pool se rotacao ativa
-        initial_country = None
-        if ROTATE_COUNTRIES and proxy_config and proxy_config.get("enabled"):
-            initial_country = COUNTRY_POOL[i % len(COUNTRY_POOL)]  # Distribuir paises uniformemente
-
-        # Gerar proxy URL unica para cada sessao
-        proxy_url = build_proxy_url(proxy_config, i + 1, country_override=initial_country)
+        proxy_url = build_proxy_url(proxy_config, i + 1)
 
         session_obj = SeoFastSession(
             session_id=i + 1,
@@ -1005,7 +985,6 @@ def start_bot(email, password, num_sessions, proxy_config=None):
             proxy_url=proxy_url,
             proxy_config=proxy_config,
         )
-        session_obj.current_country = initial_country or (proxy_config.get("country", "br") if proxy_config else "br")
 
         with user_state["lock"]:
             user_state["sessions"].append({
@@ -1020,6 +999,7 @@ def start_bot(email, password, num_sessions, proxy_config=None):
         t.start()
         threads.append(t)
 
+        # Espacar inicializacoes para nao sobrecarregar
         time.sleep(random.uniform(1.5, 3.0))
 
     with user_state["lock"]:
@@ -1042,7 +1022,6 @@ def api_start():
     password = data.get("password", "").strip()
     num_sessions = int(data.get("num_sessions", 50))
 
-    # Proxy config
     proxy_config = {
         "enabled": data.get("proxy_enabled", False),
         "login": data.get("proxy_login", "").strip(),
@@ -1054,23 +1033,20 @@ def api_start():
     if not email or not password:
         return jsonify({"error": "Email e senha sao obrigatorios!"}), 400
 
-    if num_sessions < 1 or num_sessions > 100:
-        return jsonify({"error": "Numero de sessoes deve ser entre 1 e 100"}), 400
+    if num_sessions < 1 or num_sessions > 200:
+        return jsonify({"error": "Numero de sessoes deve ser entre 1 e 200"}), 400
 
-    # Verificar se ESTE usuario ja tem threads ativas
     user_state = get_user_state(email)
     active_threads = [t for t in user_state.get("threads", []) if t.is_alive()]
     if active_threads:
         return jsonify({"error": "Seu bot ja esta rodando! Clique PARAR primeiro."}), 400
 
-    # Resetar estado deste usuario
     with user_state["lock"]:
         user_state["running"] = False
         user_state["stop_requested"] = False
         user_state["sessions"] = []
         user_state["threads"] = []
 
-    # Registrar no tracking de usuarios online
     with online_users_lock:
         online_users[email] = {
             "started_at": datetime.now().strftime("%H:%M:%S"),
@@ -1080,7 +1056,6 @@ def api_start():
 
     threading.Thread(target=start_bot, args=(email, password, num_sessions, proxy_config), daemon=True).start()
 
-    # Salvar no arquivo de persistencia para auto-resume apos restart
     save_active_bots(email, password, num_sessions, proxy_config)
 
     return jsonify({"status": "started", "sessions": num_sessions})
@@ -1100,11 +1075,9 @@ def api_stop():
         user_state["stop_requested"] = True
         user_state["running"] = False
 
-    # Remover do tracking de usuarios online
     with online_users_lock:
         online_users.pop(email, None)
 
-    # Remover do arquivo de persistencia (NAO vai mais auto-resumir)
     remove_active_bot(email)
 
     add_log_for_user(email, "Parando todas as sessoes...", "warning")
@@ -1147,8 +1120,13 @@ def api_status():
                 "views": obj.views,
                 "current_video": obj.current_video,
                 "ip": obj.current_ip or "-",
-                "country": getattr(obj, 'current_country', '-') or '-',
-                "rotations": getattr(obj, 'rotation_count', 0),
+                "country": "BR",
+                "rotations": obj.rotation_count,
+                "attempts": obj.total_attempts,
+                "found": obj.tasks_found,
+                "completed": obj.tasks_completed,
+                "failed": obj.tasks_failed,
+                "skipped": obj.tasks_skipped,
             })
 
         return jsonify({
@@ -1164,19 +1142,14 @@ def api_status():
 
 @app.route("/api/online")
 def api_online():
-    """Retorna lista de usuarios online com seus emails e info.
-    NAO expira mais por heartbeat - bot roda 24h independente do navegador.
-    So sai da lista quando o usuario clica PARAR."""
+    """Retorna lista de usuarios online."""
     with online_users_lock:
-        # Verificar quais usuarios realmente tem threads ativas
-        # (em vez de depender de heartbeat do navegador)
         actually_running = []
         for email, info in list(online_users.items()):
             if email in users_state:
                 ustate = users_state[email]
                 active_threads = [t for t in ustate.get("threads", []) if t.is_alive()]
                 if not active_threads and not ustate.get("running"):
-                    # Bot parou sozinho (todas threads morreram)
                     del online_users[email]
                     continue
             actually_running.append(email)
@@ -1184,7 +1157,6 @@ def api_online():
         users_list = []
         for email in actually_running:
             info = online_users.get(email, {})
-            # Buscar ganho e views do estado do usuario
             user_earned = 0.0
             user_views = 0
             if email in users_state:
@@ -1207,7 +1179,6 @@ def api_online():
 
 @app.route("/api/heartbeat", methods=["POST"])
 def api_heartbeat():
-    """Atualiza o timestamp de last_seen do usuario."""
     data = request.json or {}
     email = data.get("email", "").strip()
     if email:
@@ -1217,10 +1188,9 @@ def api_heartbeat():
     return jsonify({"ok": True})
 
 
-# === AUTO-RESUME: Relanca bots que estavam ativos antes do restart ===
-# Executar com delay para dar tempo do servidor inicializar
+# === AUTO-RESUME ===
 def _delayed_auto_resume():
-    time.sleep(10)  # Esperar servidor estabilizar
+    time.sleep(10)
     auto_resume_bots()
 
 threading.Thread(target=_delayed_auto_resume, daemon=True).start()
