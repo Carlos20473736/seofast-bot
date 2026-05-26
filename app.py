@@ -448,14 +448,31 @@ class SeoFastSession:
                 "locale_country": "BR",
                 "data_json": json.dumps(data_json_obj, separators=(',', ':')),
             })
-            try:
-                self.client.post(f"{BASE_URL}ajax/ajax_data.php",
-                    content=up_body, headers=self._ajax_headers())
-            except Exception:
-                pass
+            # up_data com retry (CRITICO: sem up_data o servidor nao reconhece o device)
+            up_ok = False
+            for up_attempt in range(3):
+                try:
+                    r_up = self.client.post(f"{BASE_URL}ajax/ajax_data.php",
+                        content=up_body, headers=self._ajax_headers())
+                    if r_up.status_code == 200:
+                        try:
+                            up_resp = r_up.json()
+                            if up_resp.get("status"):
+                                up_ok = True
+                                break
+                        except Exception:
+                            pass
+                    # Retry com delay
+                    time.sleep(1)
+                except Exception:
+                    time.sleep(2)
+
+            if up_ok:
+                add_log(self.owner_email, f"[S{self.session_id}] LOGIN OK + DEVICE REGISTRADO | Hash: {self.hash_ajax[:8]}...", "success")
+            else:
+                add_log(self.owner_email, f"[S{self.session_id}] LOGIN OK (up_data falhou, tentando continuar) | Hash: {self.hash_ajax[:8]}...", "warning")
 
             self.status = "ready"
-            add_log(self.owner_email, f"[S{self.session_id}] LOGIN OK | Hash: {self.hash_ajax[:8]}...", "success")
             return True
 
         except Exception as e:
@@ -560,9 +577,9 @@ class SeoFastSession:
         # Resposta raw (não JSON)
         if "raw" in result:
             raw_text = result.get("raw", "")
-            if "войти" in raw_text.lower() or "Авторизуйтесь" in raw_text:
-                add_log(self.owner_email, f"[S{self.session_id}] Sessao expirada, relogin...", "warning")
-                return self.login()
+            if "войти" in raw_text.lower() or "Авторизуйтесь" in raw_text or "Попробуйте" in raw_text:
+                add_log(self.owner_email, f"[S{self.session_id}] Sessao expirada, relogin + up_data...", "warning")
+                return self.login()  # login() ja faz up_data
             self.status = "waiting"
             self.consecutive_empty += 1
             return False
@@ -570,9 +587,9 @@ class SeoFastSession:
         # Sem tarefa
         if not result.get("status") and "mess" in result:
             msg = result.get("mess", "")
-            if "войти" in msg.lower() or "Попробуйте" in msg:
-                add_log(self.owner_email, f"[S{self.session_id}] Sessao expirada, relogin...", "warning")
-                return self.login()
+            if "войти" in msg.lower() or "Попробуйте" in msg or "Авторизуйтесь" in msg:
+                add_log(self.owner_email, f"[S{self.session_id}] Sessao expirada, relogin + up_data...", "warning")
+                return self.login()  # login() ja faz up_data
             self.status = "no_task"
             self.consecutive_empty += 1
             if self.consecutive_empty % 15 == 1:
@@ -776,8 +793,8 @@ def start_bot(email, password, num_sessions, proxy_config=None):
         t = threading.Thread(target=session_worker, args=(session_obj,), daemon=True)
         t.start()
         threads.append(t)
-        # Escalonar inicio para nao sobrecarregar proxy (5-8s entre cada)
-        time.sleep(random.uniform(5, 8))
+        # Escalonar inicio (2-4s entre cada - sem proxy nao precisa de mais)
+        time.sleep(random.uniform(2, 4))
 
     with user_state["lock"]:
         user_state["threads"] = threads
