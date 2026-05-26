@@ -1,9 +1,14 @@
 """
-SeoFast Multi-Session Bot v6 - httpx_socks + HTTP/2 (DEFINITIVO)
+SeoFast Multi-Session Bot v7 - httpx_socks + HTTP/2 + SECURE DEVICE
 Testado e confirmado: httpx_socks com http2=True funciona 100%.
-requests NÃO funciona (Remote disconnected).
-httpx_socks com http2=False NÃO funciona (SSL EOF).
-UNICA combinação que funciona: httpx_socks + http2=True.
+
+Mudancas v7 (device secure):
+- Device ID com prefixo secure_ (prioridade no servidor: 100% vs 10% de tarefas)
+- data_json com is_emulator=False, is_secure=True, device_type=secure_device
+- Headers sec-ch-ua obrigatorios (sem eles = HTTP 403)
+- Accept-Language: ru-RU (como o app real)
+- Chrome 138.x (versao atual do WebView)
+- Delays otimizados para secure (tarefas chegam instantaneamente)
 """
 
 import hashlib
@@ -77,7 +82,7 @@ APP_VERSION = "1.1.0"
 APP_SECRET = "seo_fast_SFk1gR5h5DGH"
 PACKAGE_NAME = "com.example.seofast"
 
-TIMER_MULTIPLIER = 0.60
+TIMER_MULTIPLIER = 0.55
 MAX_TIMER_SECONDS = 60
 PROXY_PORT = 824
 PROXY_COUNTRY = "br"
@@ -108,14 +113,12 @@ ANDROID_DEVICES = [
 ]
 
 CHROME_VERSIONS = [
-    "120.0.6099.144", "121.0.6167.101", "122.0.6261.64", "123.0.6312.99",
-    "124.0.6367.82", "125.0.6422.113", "126.0.6478.72", "127.0.6533.88",
-    "128.0.6613.127", "129.0.6668.54", "130.0.6723.86", "131.0.6778.39",
-    "132.0.6834.15", "133.0.6917.71", "134.0.6998.39",
+    "136.0.7103.125", "137.0.7151.68", "138.0.7204.179", "138.0.7204.180",
 ]
 
 def generate_device_id():
-    return f"bluestacks_{''.join(random.choice(string.hexdigits[:16]) for _ in range(16))}"
+    """Gera device_id com prefixo secure_ (dispositivo real = prioridade no servidor)."""
+    return f"secure_{''.join(random.choice(string.hexdigits[:16]) for _ in range(16))}"
 
 def generate_user_agent(device_info):
     chrome_ver = random.choice(CHROME_VERSIONS)
@@ -261,8 +264,17 @@ class SeoFastSession:
             "X-App-Version": APP_VERSION,
             "X-Device-Id": self.device_id,
             "X-Requested-With": PACKAGE_NAME,
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "pt-BR,pt;q=0.9",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+            "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+            "sec-ch-ua": '"Not)A;Brand";v="8", "Chromium";v="138", "Android WebView";v="138"',
+            "sec-ch-ua-mobile": "?1",
+            "sec-ch-ua-platform": '"Android"',
+            "sec-fetch-site": "none",
+            "sec-fetch-mode": "navigate",
+            "sec-fetch-user": "?1",
+            "sec-fetch-dest": "document",
+            "Upgrade-Insecure-Requests": "1",
+            "priority": "u=0, i",
         }
         if self.phpsessid:
             h["Cookie"] = f"PHPSESSID={self.phpsessid}"
@@ -275,10 +287,18 @@ class SeoFastSession:
             "X-Device-Id": self.device_id,
             "X-App-Version": APP_VERSION,
             "X-Requested-With": "XMLHttpRequest",
-            "Accept": "*/*",
+            "Accept": "text/javascript, application/javascript, application/ecmascript, application/x-ecmascript, */*; q=0.01",
+            "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
             "User-Agent": self.user_agent,
             "Origin": "https://seo-fast.bz",
             "Referer": "https://seo-fast.bz/webapp/?pg=login",
+            "sec-ch-ua": '"Not)A;Brand";v="8", "Chromium";v="138", "Android WebView";v="138"',
+            "sec-ch-ua-mobile": "?1",
+            "sec-ch-ua-platform": '"Android"',
+            "sec-fetch-site": "same-origin",
+            "sec-fetch-mode": "cors",
+            "sec-fetch-dest": "empty",
+            "priority": "u=1, i",
         }
         if self.phpsessid:
             h["Cookie"] = f"PHPSESSID={self.phpsessid}"
@@ -291,10 +311,18 @@ class SeoFastSession:
             "X-App-Version": APP_VERSION,
             "X-Device-Id": self.device_id,
             "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
             "Origin": "https://seo-fast.bz",
-            "Referer": "https://seo-fast.bz/webapp/?pg=job",
+            "Referer": "https://seo-fast.bz/",
             "X-Requested-With": "XMLHttpRequest",
             "Content-Type": "application/json; charset=utf-8",
+            "sec-ch-ua": '"Not)A;Brand";v="8", "Chromium";v="138", "Android WebView";v="138"',
+            "sec-ch-ua-mobile": "?1",
+            "sec-ch-ua-platform": '"Android"',
+            "sec-fetch-site": "same-origin",
+            "sec-fetch-mode": "cors",
+            "sec-fetch-dest": "empty",
+            "priority": "u=1, i",
         }
         if self.phpsessid:
             h["Cookie"] = f"PHPSESSID={self.phpsessid}"
@@ -320,8 +348,8 @@ class SeoFastSession:
                     f"[S{self.session_id}] IP: {self.current_ip} | UA: {self.device_info['brand']} {self.device_info['model']}",
                     "info")
 
-            # Step 1: GET /webapp/
-            r = self.client.get(BASE_URL, headers=self._nav_headers())
+            # Step 1: GET /webapp/?pg=login (aceitar 200 OU 403 - ambos retornam conteudo valido)
+            r = self.client.get(f"{BASE_URL}?pg=login", headers=self._nav_headers())
 
             # Extrair PHPSESSID
             for name, value in r.headers.multi_items():
@@ -332,13 +360,13 @@ class SeoFastSession:
                     if cookie.name == "PHPSESSID":
                         self.phpsessid = cookie.value
 
-            # Extrair hash_ajax
+            # Extrair hash_ajax (aceitar 200 ou 403)
             m = re.search(r"var\s+hash_ajax\s*=\s*'([a-f0-9]+)'", r.text)
             self.hash_ajax = m.group(1) if m else None
 
             if not self.hash_ajax:
                 time.sleep(0.5)
-                r = self.client.get(f"{BASE_URL}?pg=login", headers=self._nav_headers())
+                r = self.client.get(BASE_URL, headers=self._nav_headers())
                 for cookie in self.client.cookies.jar:
                     if cookie.name == "PHPSESSID":
                         self.phpsessid = cookie.value
@@ -357,9 +385,13 @@ class SeoFastSession:
                 content=login_data, headers=self._login_headers())
 
             if "pg=job" not in r.text and "location.replace" not in r.text:
-                self.status = "login_failed"
-                add_log(self.owner_email, f"[S{self.session_id}] Login rejeitado: {r.text[:60]}", "error")
-                return False
+                # Verificar se nao e erro de versao ou bloqueio real
+                if "устарела" in r.text or "error_load" in r.text:
+                    self.status = "login_failed"
+                    add_log(self.owner_email, f"[S{self.session_id}] Login rejeitado: {r.text[:60]}", "error")
+                    return False
+                # Pode ser resposta parcial - tentar continuar
+                add_log(self.owner_email, f"[S{self.session_id}] Login resposta inesperada, tentando continuar...", "warning")
 
             # Step 3: GET ?pg=job para hash_ajax atualizado
             time.sleep(random.uniform(0.5, 1.0))
@@ -368,8 +400,43 @@ class SeoFastSession:
             if m:
                 self.hash_ajax = m.group(1)
 
-            # Step 4: up_data
+            # Step 4: up_data (secure_device = prioridade no servidor)
             time.sleep(0.3)
+            data_json_obj = {
+                "device_id": self.device_id,
+                "device_type": "secure_device",
+                "is_emulator": False,
+                "is_secure": True,
+                "timestamp": int(time.time() * 1000),
+                "google_email": self.email,
+                "hardware": {
+                    "brand": self.device_info["brand"],
+                    "model": self.device_info["model"],
+                    "device": self.device_info["device"],
+                    "hardware": "qcom",
+                    "manufacturer": self.device_info["brand"],
+                    "product": self.device_info["model"],
+                    "board": self.device_info.get("board", self.device_info["device"]),
+                },
+                "os": {
+                    "sdk_int": self.device_info["sdk"],
+                    "release": self.device_info["release"],
+                    "incremental": self.device_info["build"],
+                },
+                "display": {
+                    "width_px": 1080, "height_px": 1920,
+                    "density_dpi": 480, "density": 3.0,
+                },
+                "locale": {"language": "pt", "country": "BR", "variant": ""},
+                "timezone": "America/Sao_Paulo",
+                "extra": {
+                    "fingerprint": f"{self.device_info['brand']}/{self.device_info['device']}/{self.device_info['device']}:{self.device_info['release']}/{self.device_info['build']}/{self.device_info['build']}:user/release-keys",
+                    "tags": "release-keys",
+                    "type": "user",
+                    "user": "dpi",
+                    "host": f"SWDH{random.randint(1000, 9999)}",
+                },
+            }
             up_body = json.dumps({
                 "ajax_func": "up_data",
                 "hash_ajax": self.hash_ajax,
@@ -379,11 +446,7 @@ class SeoFastSession:
                 "screen_resolution": "1080x1920",
                 "locale_language": "pt",
                 "locale_country": "BR",
-                "data_json": json.dumps({
-                    "device_id": self.device_id, "device_type": "emulator",
-                    "is_emulator": True, "timestamp": int(time.time() * 1000),
-                    "google_email": self.email,
-                }),
+                "data_json": json.dumps(data_json_obj, separators=(',', ':')),
             })
             try:
                 self.client.post(f"{BASE_URL}ajax/ajax_data.php",
@@ -434,11 +497,32 @@ class SeoFastSession:
         })
 
     def complete_task(self, id_status):
+        data_json_obj = {
+            "device_id": self.device_id,
+            "device_type": "secure_device",
+            "is_emulator": False,
+            "is_secure": True,
+            "timestamp": int(time.time() * 1000),
+            "google_email": self.email,
+            "hardware": {
+                "brand": self.device_info["brand"],
+                "model": self.device_info["model"],
+                "device": self.device_info["device"],
+                "hardware": "qcom",
+                "manufacturer": self.device_info["brand"],
+            },
+            "os": {
+                "sdk_int": self.device_info["sdk"],
+                "release": self.device_info["release"],
+            },
+            "locale": {"language": "pt", "country": "BR"},
+            "timezone": "America/Sao_Paulo",
+        }
         return self._post_json("ajax/ajax_views.php", {
             "ajax_func": "complete_task",
             "id_status": str(id_status),
             "id_device": self.device_id,
-            "data_json": json.dumps({"device_id": self.device_id, "device_type": "emulator", "is_emulator": True, "timestamp": int(time.time() * 1000), "google_email": self.email}),
+            "data_json": json.dumps(data_json_obj, separators=(',', ':')),
             "hash_ajax": self.hash_ajax,
         })
 
@@ -605,14 +689,16 @@ def session_worker(session_obj):
             success = session_obj.run_cycle()
 
             if success:
-                time.sleep(random.uniform(1, 2))
+                # Apos completar: delay curto (app real = 1-2s)
+                time.sleep(random.uniform(1.0, 2.0))
             else:
+                # Sem tarefa: delays menores (secure recebe tarefas rapido)
                 if session_obj.consecutive_empty <= 3:
-                    delay = random.uniform(2, 4)
-                elif session_obj.consecutive_empty <= 10:
-                    delay = random.uniform(4, 7)
+                    delay = random.uniform(1.5, 3.0)
+                elif session_obj.consecutive_empty <= 8:
+                    delay = random.uniform(3, 5)
                 else:
-                    delay = random.uniform(7, 12)
+                    delay = random.uniform(5, 8)
                 for _ in range(int(delay)):
                     if user_state["stop_requested"]:
                         break
