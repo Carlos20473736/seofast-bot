@@ -78,7 +78,7 @@ def robots_txt():
 
 # ===== CONFIGURACAO DO BOT =====
 BASE_URL = "https://seo-fast.bz/webapp/"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.1.1"
 APP_SECRET = "seo_fast_SFk1gR5h5DGH"
 PACKAGE_NAME = "com.example.seofast"
 
@@ -88,7 +88,7 @@ PROXY_PORT = 824
 PROXY_COUNTRY = "br"
 # Rotacao de IP: APENAS quando IP esgotado (sem videos disponiveis)
 # Nao rotaciona por tempo - maximiza videos assistidos por IP
-IP_EXHAUSTED_THRESHOLD = 5  # tentativas vazias consecutivas para considerar IP esgotado
+IP_EXHAUSTED_THRESHOLD = 50  # tentativas vazias consecutivas para considerar IP esgotado
 
 # ===== DISPOSITIVOS ANDROID =====
 ANDROID_DEVICES = [
@@ -454,7 +454,8 @@ class SeoFastSession:
                 try:
                     r_up = self.client.post(f"{BASE_URL}ajax/ajax_data.php",
                         content=up_body, headers=self._ajax_headers())
-                    if r_up.status_code == 200:
+                    # seo-fast.bz retorna 403 com conteudo valido
+                    if r_up.status_code in (200, 403):
                         try:
                             up_resp = r_up.json()
                             if up_resp.get("status"):
@@ -486,15 +487,20 @@ class SeoFastSession:
         for attempt in range(3):
             try:
                 r = self.client.post(url, content=body, headers=self._ajax_headers())
-                if r.status_code == 200:
+                # seo-fast.bz retorna 403 com conteudo valido (comportamento normal)
+                if r.status_code in (200, 403):
+                    text = r.text.strip()
+                    if not text:
+                        return None
                     try:
                         return r.json()
                     except Exception:
-                        return {"raw": r.text[:200]}
+                        return {"raw": text[:200]}
                 elif r.status_code >= 500:
                     time.sleep(2)
                     continue
                 else:
+                    # 402, 429, etc = bloqueio real
                     return None
             except Exception as e:
                 if attempt < 2:
