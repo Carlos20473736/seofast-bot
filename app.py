@@ -84,8 +84,11 @@ PACKAGE_NAME = "com.example.seofast"
 
 TIMER_MULTIPLIER = 0.55
 MAX_TIMER_SECONDS = 60
+# DataImpulse (SOCKS5)
 PROXY_PORT = 824
 PROXY_COUNTRY = "br"
+# Bright Data (HTTPS proxy / porta 33335)
+BRIGHTDATA_PORT = 33335
 # Rotacao de IP: APENAS quando IP esgotado (sem videos disponiveis)
 # Nao rotaciona por tempo - maximiza videos assistidos por IP
 IP_EXHAUSTED_THRESHOLD = 50  # tentativas vazias consecutivas para considerar IP esgotado
@@ -201,18 +204,55 @@ online_users = {}
 online_users_lock = threading.Lock()
 
 # ===== PROXY =====
+def is_brightdata(proxy_config):
+    """Detecta se a config e da Bright Data, pelo provider explicito ou pelo host."""
+    provider = (proxy_config.get("provider") or "").lower()
+    if "bright" in provider or provider == "brightdata":
+        return True
+    if "dataimpulse" in provider:
+        return False
+    h = (proxy_config.get("host") or "").lower()
+    return ("superproxy.io" in h) or ("brd-customer" in h) or ("brd" in h and "proxy" in h)
+
+
 def build_proxy_url(proxy_config, session_id, rotation_id=None):
+    """Monta a URL de proxy no formato correto para cada provedor.
+
+    - Bright Data: proxy HTTPS (porta 33335) com SSL no proxy e sticky session
+      via -session-. Formato do usuario:
+        brd-customer-...-zone-...-country-br-session-sfXrY
+      Esquema retornado: https://  (TLS para o proprio proxy, exigido na 33335)
+    - DataImpulse: proxy SOCKS5 (porta 824), formato de usuario com __cr/__sd.
+    """
     if not proxy_config or not proxy_config.get("enabled"):
         return None
     login = proxy_config.get("login", "")
     password = proxy_config.get("password", "")
     host = proxy_config.get("host", "gw.dataimpulse.com")
+    country = (proxy_config.get("country") or PROXY_COUNTRY or "br").strip().lower()
     if not login or not password:
         return None
     rot_id = rotation_id or int(time.time()) % 100000
     sessid_value = f"sf{session_id}r{rot_id}"
-    login_with_params = f"{login}__cr.{PROXY_COUNTRY}__sd.{sessid_value}"
-    return f"socks5://{login_with_params}:{password}@{host}:{PROXY_PORT}"
+
+    def _port(default):
+        p = proxy_config.get("port")
+        try:
+            return int(p) if p else default
+        except (TypeError, ValueError):
+            return default
+
+    if is_brightdata(proxy_config):
+        # Bright Data: porta 33335 exige conexao HTTPS ao proxy.
+        # Parametros (country/session) sao anexados ao username com prefixo '-'.
+        # Remove parametros previos para evitar duplicacao em rotacoes.
+        base_login = login.split("-country-")[0].split("-session-")[0]
+        login_with_params = f"{base_login}-country-{country}-session-{sessid_value}"
+        return f"https://{login_with_params}:{password}@{host}:{_port(BRIGHTDATA_PORT)}"
+
+    # DataImpulse (padrao): SOCKS5 na porta 824.
+    login_with_params = f"{login}__cr.{country}__sd.{sessid_value}"
+    return f"socks5://{login_with_params}:{password}@{host}:{_port(PROXY_PORT)}"
 
 # ===== BOT SESSION =====
 class SeoFastSession:
@@ -245,15 +285,29 @@ class SeoFastSession:
         self.tasks_skipped = 0
 
     def _create_client(self):
-        """Criar httpx client com HTTP/2 via SOCKS5 proxy"""
+        """Criar httpx client adequado ao provedor de proxy.
+
+        - Bright Data (proxy https://, porta 33335): usar o proxy nativo do httpx
+          (faz CONNECT com TLS ao proxy) e HTTP/1.1 (HTTP/2 dispara 429 rate limit).
+        - DataImpulse (proxy socks5://): usar httpx_socks SyncProxyTransport + HTTP/2.
+        - Sem proxy: cliente direto HTTP/2.
+        """
         if self.client:
             try:
                 self.client.close()
             except Exception:
                 pass
         if self.proxy_url:
-            transport = SyncProxyTransport.from_url(self.proxy_url, http2=True, verify=False)
-            self.client = httpx.Client(transport=transport, timeout=25.0, follow_redirects=True)
+            if self.proxy_url.startswith("https://") or self.proxy_url.startswith("http://"):
+                # Bright Data: proxy HTTP(S) nativo + HTTP/1.1
+                self.client = httpx.Client(
+                    proxy=self.proxy_url, http2=False, verify=False,
+                    timeout=25.0, follow_redirects=True,
+                )
+            else:
+                # DataImpulse: SOCKS5 + HTTP/2
+                transport = SyncProxyTransport.from_url(self.proxy_url, http2=True, verify=False)
+                self.client = httpx.Client(transport=transport, timeout=25.0, follow_redirects=True)
         else:
             self.client = httpx.Client(http2=True, verify=False, timeout=25.0, follow_redirects=True)
 
@@ -822,8 +876,10 @@ def api_start():
         "enabled": data.get("proxy_enabled", False),
         "login": data.get("proxy_login", "").strip(),
         "password": data.get("proxy_password", "").strip(),
-        "host": data.get("proxy_host", "gw.dataimpulse.com").strip(),
-        "country": data.get("proxy_country", "br").strip().lower(),
+        "host": (data.get("proxy_host") or "gw.dataimpulse.com").strip(),
+        "port": data.get("proxy_port"),
+        "provider": (data.get("proxy_provider") or "").strip().lower(),
+        "country": (data.get("proxy_country") or "br").strip().lower(),
     }
     if not email or not password:
         return jsonify({"error": "Email e senha sao obrigatorios!"}), 400
