@@ -21,7 +21,18 @@
             --text-secondary: #888;
             --red: #ff4444;
             --yellow: #ffaa00;
+            --gold: #ffd700;
+            --cyan: #00d9ff;
         }
+        .mode-selector { display: flex; gap: 8px; margin: 15px 0 5px; flex-wrap: wrap; }
+        .mode-btn { padding: 10px 18px; border: 2px solid var(--border); border-radius: 6px; background: var(--bg-secondary); color: var(--text-secondary); cursor: pointer; font-family: 'Courier New', monospace; font-size: 0.8rem; text-align: center; flex: 1; min-width: 150px; transition: all 0.2s; }
+        .mode-btn:hover { border-color: var(--green-primary); color: var(--text-primary); }
+        .mode-btn.active { border-color: var(--gold); color: var(--gold); background: rgba(255, 215, 0, 0.05); box-shadow: 0 0 10px rgba(255, 215, 0, 0.2); }
+        .mode-btn.active.mode-pro { border-color: var(--gold); color: var(--gold); }
+        .mode-btn.active.mode-secure { border-color: var(--green-primary); color: var(--green-primary); background: rgba(0, 255, 65, 0.05); box-shadow: 0 0 10px rgba(0, 255, 65, 0.2); }
+        .mode-btn.active.mode-bluestacks { border-color: var(--cyan); color: var(--cyan); background: rgba(0, 217, 255, 0.05); box-shadow: 0 0 10px rgba(0, 217, 255, 0.2); }
+        .mode-btn .mode-title { font-weight: bold; font-size: 0.9rem; }
+        .mode-btn .mode-desc { font-size: 0.65rem; margin-top: 4px; opacity: 0.85; line-height: 1.3; }
 
         body {
             font-family: 'Courier New', monospace;
@@ -532,7 +543,25 @@
             </div>
             <button class="btn-add-acc" id="btn_add_account" onclick="addAccount()">+ ADICIONAR CONTA</button>
 
-            <!-- Proxy Config -->
+            <!-- Modo do Dispositivo -->
+            <div style="border-top:1px solid #1a1a2e;margin-top:15px;padding-top:15px;">
+                <div style="color:var(--green-primary);font-weight:bold;font-size:0.85rem;margin-bottom:8px;">MODO DO DISPOSITIVO (ANDROID SIMULATION)</div>
+                <div class="mode-selector">
+                    <div class="mode-btn mode-pro active" id="mode_pro" onclick="selectMode('pro')">
+                        <div class="mode-title">PRO</div>
+                        <div class="mode-desc">Samsung S23/S24, Pixel 8 Pro<br>4.5x mais tarefas + melhor pagamento</div>
+                    </div>
+                    <div class="mode-btn mode-secure" id="mode_secure" onclick="selectMode('secure')">
+                        <div class="mode-title">SECURE</div>
+                        <div class="mode-desc">Samsung A54, Moto G52, Redmi Note 12<br>Dispositivo real verificado</div>
+                    </div>
+                    <div class="mode-btn mode-bluestacks" id="mode_bluestacks" onclick="selectMode('bluestacks')">
+                        <div class="mode-title">BLUESTACKS</div>
+                        <div class="mode-desc">Emulador (compatibilidade)<br>Menos tarefas, funcional</div>
+                    </div>
+                </div>
+            </div>
+
             <div style="border-top:1px solid #1a1a2e;margin-top:15px;padding-top:15px;">
                 <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
                     <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.85rem;">
@@ -600,6 +629,7 @@
                         <tr>
                             <th>Conta</th>
                             <th>#</th>
+                            <th>Modo</th>
                             <th>Dispositivo</th>
                             <th>IP</th>
                             <th>Status</th>
@@ -609,7 +639,7 @@
                         </tr>
                     </thead>
                     <tbody id="sessions_table">
-                        <tr><td colspan="8" style="text-align:center;color:#444;">Nenhuma sessão ativa</td></tr>
+                        <tr><td colspan="9" style="text-align:center;color:#444;">Nenhuma sessão ativa</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -719,6 +749,18 @@
 
         const MAX_ACCOUNTS = 20;
         let accounts = []; // Array of {email, password, sessions}
+
+        // ═══ DEVICE MODE (PRO / SECURE / BLUESTACKS) ═══
+        let selectedMode = localStorage.getItem('sf_device_mode') || 'pro';
+        function selectMode(mode) {
+            if (['pro', 'secure', 'bluestacks'].indexOf(mode) === -1) mode = 'pro';
+            selectedMode = mode;
+            localStorage.setItem('sf_device_mode', mode);
+            ['pro', 'secure', 'bluestacks'].forEach(function(m) {
+                var el = document.getElementById('mode_' + m);
+                if (el) el.classList.toggle('active', m === mode);
+            });
+        }
 
         function loadAccounts() {
             const saved = localStorage.getItem('sf_accounts');
@@ -950,6 +992,7 @@
                         email: acc.email,
                         password: acc.password,
                         num_sessions: acc.sessions,
+                        device_mode: selectedMode,
                         ...proxyConfig
                     })
                 }).then(r => {
@@ -1106,9 +1149,13 @@
 
                         const shortEmail = s.account_email ? s.account_email.split('@')[0] : '-';
 
+                        var modeVal = (s.device_mode || 'pro').toLowerCase();
+                        var modeColor = modeVal === 'secure' ? 'var(--green-primary)' : (modeVal === 'bluestacks' ? 'var(--cyan)' : 'var(--gold)');
+
                         return '<tr>' +
                             '<td style="font-size:0.65rem;color:var(--yellow);">' + shortEmail + '</td>' +
                             '<td>' + s.id + '</td>' +
+                            '<td style="font-size:0.65rem;font-weight:bold;color:' + modeColor + ';">' + modeVal.toUpperCase() + '</td>' +
                             '<td style="font-size:0.65rem">' + (s.device_name || s.device_id.substring(0, 20)) + '</td>' +
                             '<td style="font-size:0.7rem;color:var(--green-primary);">' + (s.ip || '-') + '</td>' +
                             '<td><span class="' + statusClass + '">' + statusText + '</span></td>' +
@@ -1118,7 +1165,7 @@
                         '</tr>';
                     }).join('');
                 } else {
-                    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#444;">Nenhuma sess\u00e3o ativa</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#444;">Nenhuma sess\u00e3o ativa</td></tr>';
                 }
 
                 // Logs (merged, sorted by time)
@@ -1137,6 +1184,7 @@
 
         // ═══ INITIAL STATE CHECK ═══
         (function checkInitialState() {
+            selectMode(selectedMode);
             loadAccounts();
             const emails = accounts.filter(a => a.email).map(a => a.email);
             if (emails.length === 0) return;

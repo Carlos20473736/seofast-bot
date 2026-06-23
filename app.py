@@ -93,41 +93,408 @@ BRIGHTDATA_PORT = 33335
 # Nao rotaciona por tempo - maximiza videos assistidos por IP
 IP_EXHAUSTED_THRESHOLD = 50  # tentativas vazias consecutivas para considerar IP esgotado
 
-# ===== DISPOSITIVOS ANDROID =====
-ANDROID_DEVICES = [
-    {"brand": "samsung", "model": "SM-A546E", "device": "a54x", "build": "TP1A.220624.014", "sdk": 33, "release": "13"},
-    {"brand": "samsung", "model": "SM-G960N", "device": "starlte", "build": "PQ3A.190605.07021633", "sdk": 28, "release": "9"},
-    {"brand": "samsung", "model": "SM-A525F", "device": "a52q", "build": "SP1A.210812.016", "sdk": 31, "release": "12"},
-    {"brand": "samsung", "model": "SM-G991B", "device": "o1s", "build": "TP1A.220624.014", "sdk": 33, "release": "13"},
-    {"brand": "samsung", "model": "SM-A336B", "device": "a33x", "build": "TP1A.220624.014", "sdk": 33, "release": "13"},
-    {"brand": "samsung", "model": "SM-G998B", "device": "p3s", "build": "SP2A.220405.004", "sdk": 32, "release": "12L"},
-    {"brand": "xiaomi", "model": "Redmi Note 12", "device": "tapas", "build": "TKQ1.221114.001", "sdk": 33, "release": "13"},
-    {"brand": "xiaomi", "model": "POCO X5 Pro", "device": "redwood", "build": "TKQ1.221114.001", "sdk": 33, "release": "13"},
-    {"brand": "xiaomi", "model": "Redmi Note 11", "device": "spes", "build": "SKQ1.211019.001", "sdk": 31, "release": "12"},
-    {"brand": "google", "model": "Pixel 7", "device": "panther", "build": "TQ3A.230901.001", "sdk": 34, "release": "14"},
-    {"brand": "google", "model": "Pixel 6a", "device": "bluejay", "build": "TQ3A.230705.001", "sdk": 33, "release": "13"},
-    {"brand": "oneplus", "model": "CPH2449", "device": "OP5958L1", "build": "TP1A.220905.001", "sdk": 33, "release": "13"},
-    {"brand": "realme", "model": "RMX3630", "device": "RE58B2", "build": "TP1A.220905.001", "sdk": 33, "release": "13"},
-    {"brand": "motorola", "model": "moto g(60)", "device": "hanoip", "build": "S3RHS32.20-42-6-2", "sdk": 31, "release": "12"},
-    {"brand": "oppo", "model": "CPH2387", "device": "OP5961L1", "build": "TP1A.220905.001", "sdk": 32, "release": "12"},
-    {"brand": "nokia", "model": "Nokia G21", "device": "RGR_sprout", "build": "SP1A.210812.016", "sdk": 31, "release": "12"},
-    {"brand": "asus", "model": "ASUS_I006D", "device": "ASUS_I006D", "build": "SKQ1.210821.001", "sdk": 32, "release": "12"},
-    {"brand": "sony", "model": "XQ-CQ72", "device": "pdx225", "build": "TQ3A.230901.001", "sdk": 33, "release": "13"},
-]
+# ===== PERFIS ANDROID (PRO / SECURE / BLUESTACKS) =====
+# Importado do V3 PRO: modo selecionavel pela interface.
+# 'secure' mantem compatibilidade com o comportamento original do V2.
+DEVICE_PROFILES = {
+    # ─── PRO: Dispositivos premium (Samsung S23/S24, Pixel 8 Pro) ─────────────
+    "pro": [
+        {
+            "brand": "samsung", "model": "SM-S918B", "device": "dm3q",
+            "hardware": "qcom", "manufacturer": "samsung",
+            "product": "dm3qxxx", "board": "kalama",
+            "sdk": 34, "release": "14", "build": "UP1A.231005.007",
+            "incremental": "S918BXXS5CXK1",
+            "fingerprint": "samsung/dm3qxxx/dm3q:14/UP1A.231005.007/S918BXXS5CXK1:user/release-keys",
+            "display": {"width_px": 1440, "height_px": 3088, "density_dpi": 600, "density": 3.75},
+        },
+        {
+            "brand": "samsung", "model": "SM-S928B", "device": "e3q",
+            "hardware": "qcom", "manufacturer": "samsung",
+            "product": "e3qxxx", "board": "pineapple",
+            "sdk": 34, "release": "14", "build": "UP1A.231005.007",
+            "incremental": "S928BXXS2AXL1",
+            "fingerprint": "samsung/e3qxxx/e3q:14/UP1A.231005.007/S928BXXS2AXL1:user/release-keys",
+            "display": {"width_px": 1440, "height_px": 3120, "density_dpi": 600, "density": 3.75},
+        },
+        {
+            "brand": "samsung", "model": "SM-S911B", "device": "dm1q",
+            "hardware": "qcom", "manufacturer": "samsung",
+            "product": "dm1qxxx", "board": "kalama",
+            "sdk": 34, "release": "14", "build": "UP1A.231005.007",
+            "incremental": "S911BXXS5CXK2",
+            "fingerprint": "samsung/dm1qxxx/dm1q:14/UP1A.231005.007/S911BXXS5CXK2:user/release-keys",
+            "display": {"width_px": 1080, "height_px": 2340, "density_dpi": 480, "density": 3.0},
+        },
+        {
+            "brand": "google", "model": "Pixel 8 Pro", "device": "husky",
+            "hardware": "zuma", "manufacturer": "Google",
+            "product": "husky", "board": "zuma",
+            "sdk": 34, "release": "14", "build": "AP2A.240805.005",
+            "incremental": "AP2A.240805.005",
+            "fingerprint": "google/husky/husky:14/AP2A.240805.005/12025142:user/release-keys",
+            "display": {"width_px": 1344, "height_px": 2992, "density_dpi": 560, "density": 3.5},
+        },
+        {
+            "brand": "google", "model": "Pixel 9 Pro", "device": "caiman",
+            "hardware": "zuma_pro", "manufacturer": "Google",
+            "product": "caiman", "board": "zuma_pro",
+            "sdk": 35, "release": "15", "build": "AP3A.241105.008",
+            "incremental": "AP3A.241105.008",
+            "fingerprint": "google/caiman/caiman:15/AP3A.241105.008/12485168:user/release-keys",
+            "display": {"width_px": 1280, "height_px": 2856, "density_dpi": 560, "density": 3.5},
+        },
+        {
+            "brand": "samsung", "model": "SM-F946B", "device": "q5q",
+            "hardware": "qcom", "manufacturer": "samsung",
+            "product": "q5qxxx", "board": "kalama",
+            "sdk": 34, "release": "14", "build": "UP1A.231005.007",
+            "incremental": "F946BXXS3CXK1",
+            "fingerprint": "samsung/q5qxxx/q5q:14/UP1A.231005.007/F946BXXS3CXK1:user/release-keys",
+            "display": {"width_px": 1812, "height_px": 2176, "density_dpi": 480, "density": 3.0},
+        },
+        {
+            "brand": "oneplus", "model": "CPH2581", "device": "aston",
+            "hardware": "qcom", "manufacturer": "OnePlus",
+            "product": "aston", "board": "kalama",
+            "sdk": 34, "release": "14", "build": "TP1A.220905.001",
+            "incremental": "A.16.0.0.203.CN",
+            "fingerprint": "OnePlus/aston/aston:14/TP1A.220905.001/A.16.0.0.203.CN:user/release-keys",
+            "display": {"width_px": 1440, "height_px": 3168, "density_dpi": 560, "density": 3.5},
+        },
+        # ─── NOVOS PERFIS v3.8 (mais diversidade) ────────────────────────────
+        {
+            "brand": "samsung", "model": "SM-S926B", "device": "e2q",
+            "hardware": "qcom", "manufacturer": "samsung",
+            "product": "e2qxxx", "board": "pineapple",
+            "sdk": 34, "release": "14", "build": "UP1A.231005.007",
+            "incremental": "S926BXXS2AXL3",
+            "fingerprint": "samsung/e2qxxx/e2q:14/UP1A.231005.007/S926BXXS2AXL3:user/release-keys",
+            "display": {"width_px": 1440, "height_px": 3120, "density_dpi": 600, "density": 3.75},
+        },
+        {
+            "brand": "samsung", "model": "SM-S921B", "device": "e1q",
+            "hardware": "qcom", "manufacturer": "samsung",
+            "product": "e1qxxx", "board": "pineapple",
+            "sdk": 34, "release": "14", "build": "UP1A.231005.007",
+            "incremental": "S921BXXS2AXK5",
+            "fingerprint": "samsung/e1qxxx/e1q:14/UP1A.231005.007/S921BXXS2AXK5:user/release-keys",
+            "display": {"width_px": 1080, "height_px": 2340, "density_dpi": 480, "density": 3.0},
+        },
+        {
+            "brand": "samsung", "model": "SM-A556E", "device": "a55x",
+            "hardware": "exynos1480", "manufacturer": "samsung",
+            "product": "a55xnsxx", "board": "s5e8845",
+            "sdk": 34, "release": "14", "build": "UP1A.231005.007",
+            "incremental": "A556EXXS2AXJ1",
+            "fingerprint": "samsung/a55xnsxx/a55x:14/UP1A.231005.007/A556EXXS2AXJ1:user/release-keys",
+            "display": {"width_px": 1080, "height_px": 2340, "density_dpi": 480, "density": 3.0},
+        },
+        {
+            "brand": "samsung", "model": "SM-A346M", "device": "a34x",
+            "hardware": "mt6877v", "manufacturer": "samsung",
+            "product": "a34xub", "board": "mt6877v",
+            "sdk": 34, "release": "14", "build": "UP1A.231005.007",
+            "incremental": "A346MUBU5CXH2",
+            "fingerprint": "samsung/a34xub/a34x:14/UP1A.231005.007/A346MUBU5CXH2:user/release-keys",
+            "display": {"width_px": 1080, "height_px": 2340, "density_dpi": 480, "density": 3.0},
+        },
+        {
+            "brand": "google", "model": "Pixel 8", "device": "shiba",
+            "hardware": "zuma", "manufacturer": "Google",
+            "product": "shiba", "board": "zuma",
+            "sdk": 34, "release": "14", "build": "AP2A.240905.003",
+            "incremental": "AP2A.240905.003",
+            "fingerprint": "google/shiba/shiba:14/AP2A.240905.003/12231197:user/release-keys",
+            "display": {"width_px": 1080, "height_px": 2400, "density_dpi": 420, "density": 2.625},
+        },
+        {
+            "brand": "google", "model": "Pixel 7 Pro", "device": "cheetah",
+            "hardware": "tensor", "manufacturer": "Google",
+            "product": "cheetah", "board": "cloudripper",
+            "sdk": 34, "release": "14", "build": "AP2A.240805.005",
+            "incremental": "AP2A.240805.005",
+            "fingerprint": "google/cheetah/cheetah:14/AP2A.240805.005/12025142:user/release-keys",
+            "display": {"width_px": 1440, "height_px": 3120, "density_dpi": 560, "density": 3.5},
+        },
+        {
+            "brand": "google", "model": "Pixel 9", "device": "tokay",
+            "hardware": "zuma_pro", "manufacturer": "Google",
+            "product": "tokay", "board": "zuma_pro",
+            "sdk": 35, "release": "15", "build": "AP3A.241205.015",
+            "incremental": "AP3A.241205.015",
+            "fingerprint": "google/tokay/tokay:15/AP3A.241205.015/12621605:user/release-keys",
+            "display": {"width_px": 1080, "height_px": 2424, "density_dpi": 420, "density": 2.625},
+        },
+        {
+            "brand": "Xiaomi", "model": "2311DRK48C", "device": "shennong",
+            "hardware": "qcom", "manufacturer": "Xiaomi",
+            "product": "shennong_global", "board": "kalama",
+            "sdk": 34, "release": "14", "build": "TKQ1.221114.001",
+            "incremental": "V816.0.3.0.UNCCNXM",
+            "fingerprint": "Xiaomi/shennong_global/shennong:14/TKQ1.221114.001/V816.0.3.0.UNCCNXM:user/release-keys",
+            "display": {"width_px": 1440, "height_px": 3200, "density_dpi": 560, "density": 3.5},
+        },
+        {
+            "brand": "Xiaomi", "model": "23113RKC6C", "device": "duchamp",
+            "hardware": "mt6985", "manufacturer": "Xiaomi",
+            "product": "duchamp_global", "board": "duchamp",
+            "sdk": 34, "release": "14", "build": "TKQ1.221114.001",
+            "incremental": "V816.0.2.0.UMNMIXM",
+            "fingerprint": "Xiaomi/duchamp_global/duchamp:14/TKQ1.221114.001/V816.0.2.0.UMNMIXM:user/release-keys",
+            "display": {"width_px": 1220, "height_px": 2712, "density_dpi": 480, "density": 3.0},
+        },
+        {
+            "brand": "oneplus", "model": "CPH2591", "device": "salami",
+            "hardware": "qcom", "manufacturer": "OnePlus",
+            "product": "salami", "board": "kalama",
+            "sdk": 34, "release": "14", "build": "TP1A.220905.001",
+            "incremental": "C.11.0.0.211.CN",
+            "fingerprint": "OnePlus/salami/salami:14/TP1A.220905.001/C.11.0.0.211.CN:user/release-keys",
+            "display": {"width_px": 1440, "height_px": 3216, "density_dpi": 560, "density": 3.5},
+        },
+        {
+            "brand": "oneplus", "model": "CPH2449", "device": "ovaltine",
+            "hardware": "qcom", "manufacturer": "OnePlus",
+            "product": "ovaltine", "board": "taro",
+            "sdk": 34, "release": "14", "build": "TP1A.220905.001",
+            "incremental": "F.17.0.0.117.CN",
+            "fingerprint": "OnePlus/ovaltine/ovaltine:14/TP1A.220905.001/F.17.0.0.117.CN:user/release-keys",
+            "display": {"width_px": 1440, "height_px": 3216, "density_dpi": 560, "density": 3.5},
+        },
+        {
+            "brand": "motorola", "model": "motorola edge 40 pro", "device": "rtwo",
+            "hardware": "qcom", "manufacturer": "motorola",
+            "product": "rtwo_global", "board": "kalama",
+            "sdk": 34, "release": "14", "build": "U1TRS34.27-18-3",
+            "incremental": "U1TRS34.27-18-3",
+            "fingerprint": "motorola/rtwo_global/rtwo:14/U1TRS34.27-18-3/4a5b6c:user/release-keys",
+            "display": {"width_px": 1080, "height_px": 2400, "density_dpi": 440, "density": 2.75},
+        },
+        {
+            "brand": "motorola", "model": "motorola edge 50 pro", "device": "eqe",
+            "hardware": "qcom", "manufacturer": "motorola",
+            "product": "eqe_global", "board": "pineapple",
+            "sdk": 34, "release": "14", "build": "U1TE34.87-18-3",
+            "incremental": "U1TE34.87-18-3",
+            "fingerprint": "motorola/eqe_global/eqe:14/U1TE34.87-18-3/7d8e9f:user/release-keys",
+            "display": {"width_px": 1220, "height_px": 2712, "density_dpi": 480, "density": 3.0},
+        },
+        {
+            "brand": "samsung", "model": "SM-A155M", "device": "a15",
+            "hardware": "mt6835", "manufacturer": "samsung",
+            "product": "a15ub", "board": "mt6835",
+            "sdk": 34, "release": "14", "build": "UP1A.231005.007",
+            "incremental": "A155MUBU3AXH1",
+            "fingerprint": "samsung/a15ub/a15:14/UP1A.231005.007/A155MUBU3AXH1:user/release-keys",
+            "display": {"width_px": 1080, "height_px": 2340, "density_dpi": 480, "density": 3.0},
+        },
+        {
+            "brand": "samsung", "model": "SM-M546B", "device": "m54x",
+            "hardware": "exynos1380", "manufacturer": "samsung",
+            "product": "m54xnsxx", "board": "s5e8835",
+            "sdk": 34, "release": "14", "build": "UP1A.231005.007",
+            "incremental": "M546BXXS5CXJ2",
+            "fingerprint": "samsung/m54xnsxx/m54x:14/UP1A.231005.007/M546BXXS5CXJ2:user/release-keys",
+            "display": {"width_px": 1080, "height_px": 2340, "density_dpi": 480, "density": 3.0},
+        },
+        {
+            "brand": "samsung", "model": "SM-G991B", "device": "o1s",
+            "hardware": "exynos2100", "manufacturer": "samsung",
+            "product": "o1sxxx", "board": "exynos2100",
+            "sdk": 34, "release": "14", "build": "UP1A.231005.007",
+            "incremental": "G991BXXS9GXK1",
+            "fingerprint": "samsung/o1sxxx/o1s:14/UP1A.231005.007/G991BXXS9GXK1:user/release-keys",
+            "display": {"width_px": 1080, "height_px": 2400, "density_dpi": 480, "density": 3.0},
+        },
+        {
+            "brand": "samsung", "model": "SM-G998B", "device": "p3s",
+            "hardware": "exynos2100", "manufacturer": "samsung",
+            "product": "p3sxxx", "board": "exynos2100",
+            "sdk": 34, "release": "14", "build": "UP1A.231005.007",
+            "incremental": "G998BXXS9GXK2",
+            "fingerprint": "samsung/p3sxxx/p3s:14/UP1A.231005.007/G998BXXS9GXK2:user/release-keys",
+            "display": {"width_px": 1440, "height_px": 3200, "density_dpi": 560, "density": 3.5},
+        },
+        {
+            "brand": "Xiaomi", "model": "2201116SG", "device": "vili",
+            "hardware": "qcom", "manufacturer": "Xiaomi",
+            "product": "vili_global", "board": "taro",
+            "sdk": 34, "release": "14", "build": "TKQ1.221114.001",
+            "incremental": "V816.0.1.0.UKDMIXM",
+            "fingerprint": "Xiaomi/vili_global/vili:14/TKQ1.221114.001/V816.0.1.0.UKDMIXM:user/release-keys",
+            "display": {"width_px": 1080, "height_px": 2400, "density_dpi": 440, "density": 2.75},
+        },
+    ],
+
+    # ─── SECURE: Dispositivos reais de gama media ────────────────────────────
+    "secure": [
+        {
+            "brand": "samsung", "model": "SM-A546E", "device": "a54x",
+            "hardware": "exynos1380", "manufacturer": "samsung",
+            "product": "a54xnsxx", "board": "s5e8835",
+            "sdk": 34, "release": "14", "build": "UP1A.231005.007",
+            "incremental": "A546EXXS9CXJ5",
+            "fingerprint": "samsung/a54xnsxx/a54x:14/UP1A.231005.007/A546EXXS9CXJ5:user/release-keys",
+            "display": {"width_px": 1080, "height_px": 2340, "density_dpi": 480, "density": 3.0},
+        },
+        {
+            "brand": "samsung", "model": "SM-A135M", "device": "a13",
+            "hardware": "exynos850", "manufacturer": "samsung",
+            "product": "a13ub", "board": "s5e3830",
+            "sdk": 33, "release": "13", "build": "TP1A.220624.014",
+            "incremental": "A135MUBS6CXH1",
+            "fingerprint": "samsung/a13ub/a13:13/TP1A.220624.014/A135MUBS6CXH1:user/release-keys",
+            "display": {"width_px": 1080, "height_px": 2408, "density_dpi": 480, "density": 3.0},
+        },
+        {
+            "brand": "samsung", "model": "SM-A525F", "device": "a52q",
+            "hardware": "qcom", "manufacturer": "samsung",
+            "product": "a52qnsxx", "board": "lahaina",
+            "sdk": 33, "release": "13", "build": "TP1A.220624.014",
+            "incremental": "A525FXXS5CXG3",
+            "fingerprint": "samsung/a52qnsxx/a52q:13/TP1A.220624.014/A525FXXS5CXG3:user/release-keys",
+            "display": {"width_px": 1080, "height_px": 2400, "density_dpi": 480, "density": 3.0},
+        },
+        {
+            "brand": "motorola", "model": "moto g(52)", "device": "rhode",
+            "hardware": "qcom", "manufacturer": "motorola",
+            "product": "rhode_g", "board": "bengal",
+            "sdk": 33, "release": "13", "build": "T2SRS33.72-22-8",
+            "incremental": "T2SRS33.72-22-8",
+            "fingerprint": "motorola/rhode_g/rhode:13/T2SRS33.72-22-8/1b2c3d:user/release-keys",
+            "display": {"width_px": 1080, "height_px": 2400, "density_dpi": 440, "density": 2.75},
+        },
+        {
+            "brand": "Xiaomi", "model": "Redmi Note 12", "device": "tapas",
+            "hardware": "mt6769", "manufacturer": "Xiaomi",
+            "product": "tapas_global", "board": "tapas",
+            "sdk": 33, "release": "13", "build": "TKQ1.221114.001",
+            "incremental": "V14.0.4.0.TMTMIXM",
+            "fingerprint": "Xiaomi/tapas_global/tapas:13/TKQ1.221114.001/V14.0.4.0.TMTMIXM:user/release-keys",
+            "display": {"width_px": 1080, "height_px": 2400, "density_dpi": 440, "density": 2.75},
+        },
+        {
+            "brand": "samsung", "model": "SM-G991B", "device": "o1s",
+            "hardware": "exynos2100", "manufacturer": "samsung",
+            "product": "o1sxxx", "board": "exynos2100",
+            "sdk": 33, "release": "13", "build": "TP1A.220624.014",
+            "incremental": "G991BXXS8GXH1",
+            "fingerprint": "samsung/o1sxxx/o1s:13/TP1A.220624.014/G991BXXS8GXH1:user/release-keys",
+            "display": {"width_px": 1080, "height_px": 2400, "density_dpi": 480, "density": 3.0},
+        },
+        {
+            "brand": "samsung", "model": "SM-A336B", "device": "a33x",
+            "hardware": "exynos1280", "manufacturer": "samsung",
+            "product": "a33xxx", "board": "s5e8825",
+            "sdk": 33, "release": "13", "build": "TP1A.220624.014",
+            "incremental": "A336BXXS6CXG1",
+            "fingerprint": "samsung/a33xxx/a33x:13/TP1A.220624.014/A336BXXS6CXG1:user/release-keys",
+            "display": {"width_px": 1080, "height_px": 2408, "density_dpi": 480, "density": 3.0},
+        },
+        {
+            "brand": "xiaomi", "model": "POCO X5 Pro", "device": "redwood",
+            "hardware": "qcom", "manufacturer": "Xiaomi",
+            "product": "redwood_global", "board": "bengal",
+            "sdk": 33, "release": "13", "build": "TKQ1.221114.001",
+            "incremental": "V14.0.6.0.TMSMIXM",
+            "fingerprint": "Xiaomi/redwood_global/redwood:13/TKQ1.221114.001/V14.0.6.0.TMSMIXM:user/release-keys",
+            "display": {"width_px": 1080, "height_px": 2400, "density_dpi": 440, "density": 2.75},
+        },
+        {
+            "brand": "google", "model": "Pixel 7", "device": "panther",
+            "hardware": "tensor", "manufacturer": "Google",
+            "product": "panther", "board": "tensor",
+            "sdk": 34, "release": "14", "build": "AP2A.240805.005",
+            "incremental": "AP2A.240805.005",
+            "fingerprint": "google/panther/panther:14/AP2A.240805.005/12025142:user/release-keys",
+            "display": {"width_px": 1080, "height_px": 2400, "density_dpi": 480, "density": 3.0},
+        },
+        {
+            "brand": "oneplus", "model": "CPH2449", "device": "OP5958L1",
+            "hardware": "qcom", "manufacturer": "OnePlus",
+            "product": "OP5958L1", "board": "lahaina",
+            "sdk": 33, "release": "13", "build": "TP1A.220905.001",
+            "incremental": "A.16.0.0.203.CN",
+            "fingerprint": "OnePlus/OP5958L1/OP5958L1:13/TP1A.220905.001/A.16.0.0.203.CN:user/release-keys",
+            "display": {"width_px": 1080, "height_px": 2412, "density_dpi": 480, "density": 3.0},
+        },
+    ],
+
+    # ─── BLUESTACKS: Emulador (menos tarefas, compatibilidade) ───────────────
+    "bluestacks": [
+        {
+            "brand": "samsung", "model": "SM-G960N", "device": "marlin",
+            "hardware": "qcom", "manufacturer": "samsung",
+            "product": "SM-G960N", "board": "SM-G960N",
+            "sdk": 28, "release": "9", "build": "PQ3A.190605.07021633",
+            "incremental": "3793265",
+            "fingerprint": "Android/aosp_marlin/marlin:9/PQ3A.190605.07021633/3793265:user/release-keys",
+            "display": {"width_px": 1080, "height_px": 1920, "density_dpi": 480, "density": 3.0},
+        },
+        {
+            "brand": "samsung", "model": "SM-A908N", "device": "r1q",
+            "hardware": "qcom", "manufacturer": "samsung",
+            "product": "SM-A908N", "board": "SM-A908N",
+            "sdk": 28, "release": "9", "build": "PQ3A.190605.07021633",
+            "incremental": "3793265",
+            "fingerprint": "Android/aosp_marlin/marlin:9/PQ3A.190605.07021633/3793265:user/release-keys",
+            "display": {"width_px": 1080, "height_px": 1920, "density_dpi": 480, "density": 3.0},
+        },
+    ],
+}
+
+
+# Aliases de modo (compatibilidade): "secure" eh o pool padrao do V2 original.
+# Locale fixo BR (contas brasileiras / proxy BR) usado no data_json.
+DEVICE_LOCALE = {"language": "pt", "country": "BR", "variant": ""}
+DEVICE_TIMEZONE = "America/Sao_Paulo"
+
+# Hosts de fabrica (usados no extra.host para parecer dispositivo real)
+FACTORY_HOSTS = ["SWDG", "SWDH", "SWDI", "SWDK", "SWDL", "SWDM", "SWDN"]
+
+VALID_MODES = ("pro", "secure", "bluestacks")
+
+def normalize_mode(mode):
+    m = (mode or "pro").strip().lower()
+    return m if m in VALID_MODES else "pro"
+
+def get_random_profile(mode="pro"):
+    """Seleciona um perfil aleatorio do modo especificado."""
+    mode = normalize_mode(mode)
+    return random.choice(DEVICE_PROFILES.get(mode, DEVICE_PROFILES["pro"]))
+
+
+# Compatibilidade retroativa: ANDROID_DEVICES aponta para o pool SECURE.
+ANDROID_DEVICES = DEVICE_PROFILES["secure"]
 
 CHROME_VERSIONS = [
     "136.0.7103.125", "137.0.7151.68", "138.0.7204.179", "138.0.7204.180",
 ]
 
-def generate_device_id():
-    """Gera device_id com prefixo secure_ (dispositivo real = prioridade no servidor)."""
-    return f"secure_{''.join(random.choice(string.hexdigits[:16]) for _ in range(16))}"
+def generate_device_id(mode="pro"):
+    """Gera device_id conforme o modo selecionado (regra do APK 1.1.1 / d2/h.java j()).
+
+    - bluestacks  -> prefixo "bluestacks_" (device_type=emulator, prioridade baixa)
+    - pro/secure  -> prefixo "secure_"     (marca conhecida = secure_device,
+                                            prioridade alta no servidor)
+
+    Os perfis PRO e SECURE sao todos de marcas conhecidas (Samsung, Pixel, etc.),
+    portanto o APK gera prefixo "secure_" para ambos. O modo PRO se diferencia pelos
+    dispositivos premium e pelo data_json completo (4.5x mais tarefas).
+    """
+    mode = normalize_mode(mode)
+    suffix = ''.join(random.choice(string.hexdigits[:16]) for _ in range(16))
+    if mode == "bluestacks":
+        return f"bluestacks_{suffix}"
+    return f"secure_{suffix}"
 
 def generate_user_agent(device_info):
     chrome_ver = random.choice(CHROME_VERSIONS)
+    build = device_info.get("build") or device_info.get("incremental", "")
     return (
         f"Mozilla/5.0 (Linux; Android {device_info['release']}; {device_info['model']} "
-        f"Build/{device_info['build']}; wv) AppleWebKit/537.36 (KHTML, like Gecko) "
+        f"Build/{build}; wv) AppleWebKit/537.36 (KHTML, like Gecko) "
         f"Version/4.0 Chrome/{chrome_ver} Mobile Safari/537.36 SeoFast-App/1.0"
     )
 
@@ -139,10 +506,10 @@ users_state = {}
 users_lock = threading.Lock()
 PERSISTENCE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "active_bots.json")
 
-def save_active_bots(email, password, num_sessions, proxy_config):
+def save_active_bots(email, password, num_sessions, proxy_config, device_mode="pro"):
     try:
         data = load_active_bots()
-        data[email] = {"email": email, "password": password, "num_sessions": num_sessions, "proxy_config": proxy_config, "started_at": datetime.now().isoformat()}
+        data[email] = {"email": email, "password": password, "num_sessions": num_sessions, "proxy_config": proxy_config, "device_mode": normalize_mode(device_mode), "started_at": datetime.now().isoformat()}
         with open(PERSISTENCE_FILE, "w") as f:
             json.dump(data, f, indent=2)
     except Exception as e:
@@ -178,10 +545,11 @@ def auto_resume_bots():
             active_threads = [t for t in user_state.get("threads", []) if t.is_alive()]
             if active_threads:
                 continue
+            resume_mode = normalize_mode(info.get("device_mode", "pro"))
             with online_users_lock:
-                online_users[email] = {"started_at": datetime.now().strftime("%H:%M:%S"), "sessions": info.get("num_sessions", 50), "last_seen": time.time()}
-            threading.Thread(target=start_bot, args=(email, info["password"], info.get("num_sessions", 50), info.get("proxy_config", {})), daemon=True).start()
-            print(f"[AUTO-RESUME] {email} iniciado.")
+                online_users[email] = {"started_at": datetime.now().strftime("%H:%M:%S"), "sessions": info.get("num_sessions", 50), "device_mode": resume_mode, "last_seen": time.time()}
+            threading.Thread(target=start_bot, args=(email, info["password"], info.get("num_sessions", 50), info.get("proxy_config", {}), resume_mode), daemon=True).start()
+            print(f"[AUTO-RESUME] {email} iniciado (mode={resume_mode}).")
             time.sleep(2)
         except Exception as e:
             print(f"[AUTO-RESUME] Erro: {e}")
@@ -256,14 +624,17 @@ def build_proxy_url(proxy_config, session_id, rotation_id=None):
 
 # ===== BOT SESSION =====
 class SeoFastSession:
-    def __init__(self, session_id, email, password, owner_email, identity, proxy_url=None, proxy_config=None):
+    def __init__(self, session_id, email, password, owner_email, identity, proxy_url=None, proxy_config=None, device_mode="pro"):
         self.session_id = session_id
         self.email = email
         self.password = password
         self.owner_email = owner_email
+        self.device_mode = normalize_mode(device_mode)
         self.device_id = identity["device_id"]
         self.user_agent = identity["user_agent"]
         self.device_info = identity["device_info"]
+        # Host de fabrica FIXO por sessao (nao mudar a cada request)
+        self.factory_host = f"{random.choice(FACTORY_HOSTS)}{random.randint(1000, 9999)}"
         self.proxy_url = proxy_url
         self.proxy_config = proxy_config
         self.app_token = generate_app_token(self.device_id)
@@ -390,6 +761,89 @@ class SeoFastSession:
         except Exception:
             self.current_ip = "?"
 
+    def _build_data_json(self):
+        """Monta o data_json conforme o modo do dispositivo (baseado no V3 PRO / APK 1.1.1).
+
+        - pro/secure -> device_type="secure_device", is_emulator=False, fingerprint
+          completo e display real do perfil (prioridade alta no servidor).
+        - bluestacks -> device_type="emulator", emulator_details preenchidos.
+        """
+        is_emulator = self.device_mode == "bluestacks"
+        profile = self.device_info
+
+        data = {
+            "device_id": self.device_id,
+            "device_type": "emulator" if is_emulator else "secure_device",
+            "is_emulator": is_emulator,
+            "is_secure": not is_emulator,
+            "timestamp": int(time.time() * 1000),
+        }
+
+        # Emulator details (so existem quando is_emulator==True, como no APK)
+        if is_emulator:
+            data["emulator_type"] = "bluestacks"
+            data["emulator_details"] = {
+                "build_properties": False, "hardware": False, "files": False,
+                "memu": False, "bluestacks": True, "nox": False,
+                "genymotion": False, "google_emulator": False,
+                "masking_detected": True,
+            }
+
+        data["google_email"] = self.email
+
+        # Hardware completo (usa os campos reais do perfil)
+        data["hardware"] = {
+            "brand": profile.get("brand", "samsung"),
+            "model": profile.get("model", "SM-S918B"),
+            "device": profile.get("device", "dm3q"),
+            "hardware": profile.get("hardware", "qcom"),
+            "manufacturer": profile.get("manufacturer", profile.get("brand", "samsung")),
+            "product": profile.get("product", profile.get("model", "")),
+            "board": profile.get("board", profile.get("device", "")),
+        }
+
+        # OS com incremental real
+        data["os"] = {
+            "sdk_int": profile.get("sdk", 34),
+            "release": profile.get("release", "14"),
+            "incremental": profile.get("incremental", profile.get("build", "")),
+        }
+
+        # Display REAL do perfil
+        data["display"] = profile.get(
+            "display",
+            {"width_px": 1080, "height_px": 2340, "density_dpi": 480, "density": 3.0},
+        )
+
+        # Locale BR (contas brasileiras / proxy BR)
+        data["locale"] = dict(DEVICE_LOCALE)
+        data["timezone"] = DEVICE_TIMEZONE
+
+        # Extra: fingerprint real + host de fabrica fixo
+        if is_emulator:
+            data["extra"] = {
+                "fingerprint": profile.get("fingerprint", ""),
+                "tags": "release-keys", "type": "user",
+                "user": "build", "host": "ubuntu",
+            }
+            data["masking_detected"] = True
+            data["masking_evidence"] = {}
+        else:
+            fp = profile.get("fingerprint")
+            if not fp:
+                b = profile.get("brand", "samsung")
+                d = profile.get("device", "dm3q")
+                rel = profile.get("release", "14")
+                bld = profile.get("build", profile.get("incremental", ""))
+                fp = f"{b}/{d}/{d}:{rel}/{bld}/{bld}:user/release-keys"
+            data["extra"] = {
+                "fingerprint": fp,
+                "tags": "release-keys", "type": "user",
+                "user": "dpi", "host": self.factory_host,
+            }
+
+        return data
+
     def login(self):
         self.status = "logging_in"
         try:
@@ -454,52 +908,20 @@ class SeoFastSession:
             if m:
                 self.hash_ajax = m.group(1)
 
-            # Step 4: up_data (secure_device = prioridade no servidor)
+            # Step 4: up_data (perfil conforme o modo selecionado)
             time.sleep(0.3)
-            data_json_obj = {
-                "device_id": self.device_id,
-                "device_type": "secure_device",
-                "is_emulator": False,
-                "is_secure": True,
-                "timestamp": int(time.time() * 1000),
-                "google_email": self.email,
-                "hardware": {
-                    "brand": self.device_info["brand"],
-                    "model": self.device_info["model"],
-                    "device": self.device_info["device"],
-                    "hardware": "qcom",
-                    "manufacturer": self.device_info["brand"],
-                    "product": self.device_info["model"],
-                    "board": self.device_info.get("board", self.device_info["device"]),
-                },
-                "os": {
-                    "sdk_int": self.device_info["sdk"],
-                    "release": self.device_info["release"],
-                    "incremental": self.device_info["build"],
-                },
-                "display": {
-                    "width_px": 1080, "height_px": 1920,
-                    "density_dpi": 480, "density": 3.0,
-                },
-                "locale": {"language": "pt", "country": "BR", "variant": ""},
-                "timezone": "America/Sao_Paulo",
-                "extra": {
-                    "fingerprint": f"{self.device_info['brand']}/{self.device_info['device']}/{self.device_info['device']}:{self.device_info['release']}/{self.device_info['build']}/{self.device_info['build']}:user/release-keys",
-                    "tags": "release-keys",
-                    "type": "user",
-                    "user": "dpi",
-                    "host": f"SWDH{random.randint(1000, 9999)}",
-                },
-            }
+            data_json_obj = self._build_data_json()
+            disp = data_json_obj.get("display", {})
+            screen_res = f"{disp.get('width_px', 1080)}x{disp.get('height_px', 1920)}"
             up_body = json.dumps({
                 "ajax_func": "up_data",
                 "hash_ajax": self.hash_ajax,
                 "id_device": self.device_id,
                 "email": self.email,
                 "os_version": self.device_info["release"],
-                "screen_resolution": "1080x1920",
-                "locale_language": "pt",
-                "locale_country": "BR",
+                "screen_resolution": screen_res,
+                "locale_language": DEVICE_LOCALE["language"],
+                "locale_country": DEVICE_LOCALE["country"],
                 "data_json": json.dumps(data_json_obj, separators=(',', ':')),
             })
             # up_data com retry (CRITICO: sem up_data o servidor nao reconhece o device)
@@ -574,27 +996,7 @@ class SeoFastSession:
         })
 
     def complete_task(self, id_status):
-        data_json_obj = {
-            "device_id": self.device_id,
-            "device_type": "secure_device",
-            "is_emulator": False,
-            "is_secure": True,
-            "timestamp": int(time.time() * 1000),
-            "google_email": self.email,
-            "hardware": {
-                "brand": self.device_info["brand"],
-                "model": self.device_info["model"],
-                "device": self.device_info["device"],
-                "hardware": "qcom",
-                "manufacturer": self.device_info["brand"],
-            },
-            "os": {
-                "sdk_int": self.device_info["sdk"],
-                "release": self.device_info["release"],
-            },
-            "locale": {"language": "pt", "country": "BR"},
-            "timezone": "America/Sao_Paulo",
-        }
+        data_json_obj = self._build_data_json()
         return self._post_json("ajax/ajax_views.php", {
             "ajax_func": "complete_task",
             "id_status": str(id_status),
@@ -817,7 +1219,8 @@ def session_worker(session_obj):
             pass
 
 
-def start_bot(email, password, num_sessions, proxy_config=None):
+def start_bot(email, password, num_sessions, proxy_config=None, device_mode="pro"):
+    device_mode = normalize_mode(device_mode)
     user_state = get_user_state(email)
     with user_state["lock"]:
         user_state["running"] = True
@@ -830,14 +1233,14 @@ def start_bot(email, password, num_sessions, proxy_config=None):
         user_state["start_time"] = datetime.now().strftime("%H:%M:%S")
 
     proxy_status = "COM PROXY (BR, HTTP/2)" if (proxy_config and proxy_config.get("enabled")) else "SEM PROXY"
-    add_log(email, f"Iniciando {num_sessions} sessoes ({proxy_status})...", "info")
+    add_log(email, f"Iniciando {num_sessions} sessoes ({proxy_status}) | Modo: {device_mode.upper()}...", "info")
 
     threads = []
     for i in range(num_sessions):
         if user_state["stop_requested"]:
             break
-        device_info = random.choice(ANDROID_DEVICES)
-        device_id = generate_device_id()
+        device_info = get_random_profile(device_mode)
+        device_id = generate_device_id(device_mode)
         user_agent = generate_user_agent(device_info)
         identity = {"device_id": device_id, "user_agent": user_agent, "device_info": device_info}
         proxy_url = build_proxy_url(proxy_config, i + 1)
@@ -846,6 +1249,7 @@ def start_bot(email, password, num_sessions, proxy_config=None):
             session_id=i + 1, email=email, password=password,
             owner_email=email, identity=identity,
             proxy_url=proxy_url, proxy_config=proxy_config,
+            device_mode=device_mode,
         )
         with user_state["lock"]:
             user_state["sessions"].append({"id": i + 1, "obj": session_obj})
@@ -872,6 +1276,7 @@ def api_start():
     email = data.get("email", "").strip()
     password = data.get("password", "").strip()
     num_sessions = int(data.get("num_sessions", 50))
+    device_mode = normalize_mode(data.get("device_mode", "pro"))
     proxy_config = {
         "enabled": data.get("proxy_enabled", False),
         "login": data.get("proxy_login", "").strip(),
@@ -905,10 +1310,10 @@ def api_start():
             user_state["threads"] = []
             user_state["sessions"] = []
     with online_users_lock:
-        online_users[email] = {"started_at": datetime.now().strftime("%H:%M:%S"), "sessions": num_sessions, "last_seen": time.time()}
-    threading.Thread(target=start_bot, args=(email, password, num_sessions, proxy_config), daemon=True).start()
-    save_active_bots(email, password, num_sessions, proxy_config)
-    return jsonify({"status": "started", "sessions": num_sessions})
+        online_users[email] = {"started_at": datetime.now().strftime("%H:%M:%S"), "sessions": num_sessions, "device_mode": device_mode, "last_seen": time.time()}
+    threading.Thread(target=start_bot, args=(email, password, num_sessions, proxy_config, device_mode), daemon=True).start()
+    save_active_bots(email, password, num_sessions, proxy_config, device_mode)
+    return jsonify({"status": "started", "sessions": num_sessions, "device_mode": device_mode})
 
 @app.route("/api/stop", methods=["POST"])
 def api_stop():
@@ -941,6 +1346,7 @@ def api_status():
             active_sessions.append({
                 "id": s["id"],
                 "device_name": f"{obj.device_info['brand']} {obj.device_info['model']}",
+                "device_mode": getattr(obj, "device_mode", "pro"),
                 "status": obj.status,
                 "earned": round(obj.earned, 4),
                 "views": obj.views,
